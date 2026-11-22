@@ -1253,13 +1253,10 @@
 
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.2;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 7;
         ctx.beginPath();
         ctx.moveTo(x, wickTop);
         ctx.lineTo(x, wickBottom);
         ctx.stroke();
-        ctx.shadowBlur = 0;
 
         const bodyTop = Math.min(openY, closeY);
         const bodyHeight = Math.max(2, Math.abs(closeY - openY));
@@ -1267,10 +1264,7 @@
         body.addColorStop(0, rising ? "#8af2ca" : "#ffaaa5");
         body.addColorStop(1, color);
         ctx.fillStyle = body;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 8;
         ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
-        ctx.shadowBlur = 0;
         ctx.strokeStyle = color;
         ctx.lineWidth = 0.7;
         ctx.strokeRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
