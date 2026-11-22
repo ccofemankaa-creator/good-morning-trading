@@ -1829,7 +1829,7 @@
         }
       });
     });
-    window.addEventListener("resize", renderChart);
+    window.addEventListener("resize", () => renderChart());
 
     const startupNewsEvent = ensureWeeklyNewsPlan(Date.now());
     if (startupNewsEvent) {
