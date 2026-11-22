@@ -572,6 +572,9 @@
     .profile-form label { font-size: 10px; color: var(--muted); }
     .profile-input { height: 38px; padding: 0 10px; }
     .profile-submit { min-height: 36px; color: var(--green); }
+    .profile-pricing { display: grid; gap: 7px; padding: 12px 10px; border-top: 1px solid var(--line); }
+    .profile-pricing strong { font-size: 11px; }
+    .profile-pricing p, .profile-pricing small { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
     .telegram-contact { display: grid; gap: 8px; padding: 12px 10px; border-top: 1px solid var(--line); }
     .telegram-contact strong { font-size: 11px; }
     .telegram-contact span { color: var(--muted); font-size: 10px; }
@@ -1400,7 +1403,11 @@
           '<input class="profile-input" id="profileName" name="name" maxlength="24" autocomplete="nickname" value="' +
             escapeHTML(profile ? profile.name : "") + '" required>' +
           '<button class="profile-submit" type="submit">' + (profile ? "Сохранить имя" : "Зарегистрироваться") + '</button>' +
-        '</form><div class="telegram-contact"><strong>Связь с админом</strong>' +
+        '</form><div class="profile-pricing"><strong>Условия проекта</strong>' +
+          '<p>Создать свою акцию — 100 звёзд</p>' +
+          '<p>Пополнить игровой баланс — 50 звёзд</p>' +
+          '<small>Другие варианты оплаты обсуждаются в Telegram.</small>' +
+        '</div><div class="telegram-contact"><strong>Связь с админом</strong>' +
           '<span>По вопросам пополнения и комьюнити проекта</span>' +
             '<a class="telegram-link" href="' + TELEGRAM_URL + '" target="_blank" rel="noopener noreferrer">Написать в Telegram · @goodxzxz</a>' +
         '</div></section>';
