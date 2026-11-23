@@ -9,7 +9,220 @@ create table if not exists public.scheduled_market_events (
   unique (ticker, execute_at)
 );
 
+create table if not exists public.market_price_overrides (
+  id bigint generated always as identity primary key,
+  ticker text not null references public.market_stocks (ticker),
+  fixed_price numeric(14, 2) not null check (fixed_price > 0),
+  starts_at timestamptz not null,
+  ends_at timestamptz not null check (ends_at > starts_at),
+  created_at timestamptz not null default now(),
+  unique (ticker, starts_at)
+);
+
 alter table public.scheduled_market_events enable row level security;
+alter table public.market_price_overrides enable row level security;
+alter table public.market_state add column if not exists daily_target_date date;
+
+create table if not exists public.daily_market_targets (
+  ticker text primary key references public.market_stocks (ticker) on delete cascade,
+  target_price numeric(14, 2) not null check (target_price > 0),
+  target_percent numeric(6, 2) not null,
+  target_date date not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.daily_market_targets enable row level security;
+
+grant select (id, news_id, body, created_at) on public.news_comments to anon, authenticated;
+
+create table if not exists public.user_task_rewards (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  task text not null,
+  reward numeric(14, 2) not null check (reward > 0),
+  claimed_at timestamptz not null default now(),
+  primary key (user_id, task)
+);
+
+alter table public.user_task_rewards enable row level security;
+
+drop policy if exists user_task_rewards_read_self on public.user_task_rewards;
+create policy user_task_rewards_read_self on public.user_task_rewards
+for select to authenticated
+using (user_id = auth.uid());
+
+grant select on public.user_task_rewards to authenticated;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'chat_messages'
+  ) then
+    alter publication supabase_realtime add table public.chat_messages;
+  end if;
+end;
+$$;
+
+create or replace function public.apply_daily_market_targets()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_now timestamptz := now();
+  v_day date := (v_now at time zone 'Europe/Moscow')::date;
+  v_last_date date;
+  v_percent numeric(6, 2);
+  stock_row record;
+begin
+  select daily_target_date
+  into v_last_date
+  from public.market_state
+  where id = true;
+
+  if v_last_date is distinct from v_day then
+    for stock_row in select ticker, base_price from public.market_stocks loop
+      v_percent := (10 + floor(random() * 41)::integer)
+        * case when random() < 0.5 then -1 else 1 end;
+
+      insert into public.daily_market_targets (
+        ticker, target_price, target_percent, target_date, created_at
+      )
+      values (
+        stock_row.ticker,
+        round(greatest(0.01, stock_row.base_price * (1 + v_percent / 100.0)), 2),
+        v_percent,
+        v_day,
+        v_now
+      )
+      on conflict (ticker) do update
+      set target_price = excluded.target_price,
+          target_percent = excluded.target_percent,
+          target_date = excluded.target_date,
+          created_at = excluded.created_at;
+    end loop;
+
+    update public.market_state
+    set daily_target_date = v_day
+    where id = true;
+  end if;
+
+  update public.market_stocks as stock
+  set price = greatest(
+        0.01,
+        round(
+          case
+            when random() < 0.65
+              then stock.price + (target.target_price - stock.price) * (0.03 + random() * 0.05)
+            else stock.price
+          end,
+          2
+        )
+      ),
+      updated_at = v_now
+  from public.daily_market_targets target
+  where target.ticker = stock.ticker
+    and target.target_date = v_day;
+end;
+$$;
+
+revoke all on function public.apply_daily_market_targets() from public, anon, authenticated;
+
+create or replace function public.advance_market()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  perform public.apply_daily_market_targets();
+  perform public.advance_market_internal();
+end;
+$$;
+
+revoke all on function public.advance_market() from public, anon, authenticated;
+grant execute on function public.advance_market() to anon, authenticated;
+
+create or replace function public.claim_task_reward(p_task text, p_reward numeric)
+returns numeric
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  current_balance numeric(14, 2);
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+  if p_task <> 'install_app' or p_reward <> 1000 then
+    raise exception 'Invalid task reward';
+  end if;
+  if exists (
+    select 1
+    from public.user_task_rewards
+    where user_id = auth.uid() and task = p_task
+  ) then
+    raise exception 'Reward already claimed';
+  end if;
+
+  insert into public.user_task_rewards (user_id, task, reward)
+  values (auth.uid(), p_task, p_reward);
+
+  update public.wallets
+  set balance = balance + p_reward
+  where user_id = auth.uid()
+  returning balance into current_balance;
+
+  if current_balance is null then
+    raise exception 'Wallet not found';
+  end if;
+  return current_balance;
+end;
+$$;
+
+revoke all on function public.claim_task_reward(text, numeric) from public, anon;
+grant execute on function public.claim_task_reward(text, numeric) to authenticated;
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  new_username text;
+  new_nickname text;
+begin
+  new_username := coalesce(
+    nullif(btrim(new.raw_user_meta_data ->> 'username'), ''),
+    'user-' || left(new.id::text, 8)
+  );
+  new_nickname := coalesce(
+    nullif(btrim(new.raw_user_meta_data ->> 'nickname'), ''),
+    new_username
+  );
+  insert into public.profiles (id, username, nickname)
+  values (new.id, left(new_username, 24), left(new_nickname, 24))
+  on conflict (id) do nothing;
+  insert into public.wallets (user_id, balance)
+  values (new.id, 1000)
+  on conflict (user_id) do nothing;
+  insert into public.chat_messages (user_id, body)
+  values (new.id, 'Привет, трейдер ' || left(new_nickname, 24) || '!')
+  on conflict do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_user();
 
 delete from public.news_templates;
 
@@ -51,8 +264,6 @@ declare
   v_now timestamptz := now();
   v_last_tick timestamptz;
   v_last_news timestamptz;
-  v_volatile boolean;
-  v_tick_range numeric;
   v_current_price numeric(14, 2);
   scheduled_event record;
   selected_ticker text;
@@ -66,13 +277,30 @@ begin
   where id = true
   for update;
 
-  v_volatile := mod(extract(hour from (v_now at time zone 'Europe/Moscow'))::integer, 2) = 1;
-  v_tick_range := case when v_volatile then 0.0016 else 0.0004 end;
-
-  if v_now - v_last_tick >= interval '5 seconds' then
+  if v_now - v_last_tick >= interval '1 second' then
     update public.market_stocks
-    set price = greatest(0.01, round(price * (1 + (random() - 0.5) * v_tick_range), 2)),
-        updated_at = v_now;
+    set price = greatest(
+          0.01,
+          round(
+            price * (
+              1 +
+              case
+                when random() < 0.01 then (case when random() < 0.5 then -1 else 1 end) * (10 + floor(random() * 21)::integer)
+                when random() < 0.07 then (case when random() < 0.5 then -1 else 1 end) * (6 + floor(random() * 5)::integer)
+                else (case when random() < 0.5 then -1 else 1 end) * (1 + floor(random() * 5)::integer)
+              end / 100.0
+            ),
+            2
+          )
+        ),
+        updated_at = v_now
+    where not exists (
+      select 1
+      from public.market_price_overrides price_lock
+      where price_lock.ticker = market_stocks.ticker
+        and price_lock.starts_at <= v_now
+        and price_lock.ends_at > v_now
+    );
 
     update public.market_state
     set last_tick_at = v_now
@@ -83,13 +311,19 @@ begin
     select ticker, direction, text
     into selected_ticker, selected_direction, selected_text
     from public.news_templates
+    where not exists (
+      select 1
+      from public.market_price_overrides price_lock
+      where price_lock.ticker = news_templates.ticker
+        and price_lock.starts_at <= v_now
+        and price_lock.ends_at > v_now
+    )
     order by random()
     limit 1;
 
-    news_change := case
-      when v_volatile then 5
-      else round(0.8 + random() * 0.7, 2)
-    end * case when selected_direction = 'up' then 1 else -1 end;
+    news_change := (
+      1 + floor(random() * 5)::integer
+    ) * case when selected_direction = 'up' then 1 else -1 end;
 
     update public.market_stocks
     set price = greatest(0.01, round(price * (1 + news_change / 100), 2)),
@@ -133,6 +367,15 @@ begin
     set executed_at = v_now
     where id = scheduled_event.id;
   end loop;
+
+  update public.market_stocks stock
+  set price = price_lock.fixed_price,
+      updated_at = v_now
+  from public.market_price_overrides price_lock
+  where stock.ticker = price_lock.ticker
+    and price_lock.starts_at <= v_now
+    and price_lock.ends_at > v_now
+    and stock.price <> price_lock.fixed_price;
 
   delete from public.market_news
   where id not in (
