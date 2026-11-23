@@ -581,8 +581,10 @@
     .admin-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
     .admin-user > span { min-width: 0; overflow-wrap: anywhere; }
     .admin-user strong, .admin-user small { display: block; }
+    .admin-user-actions { display: flex; flex: 0 0 auto; gap: 5px; }
     .admin-user button, .chat-message-delete { border: 0; border-radius: 6px; background: #352020; color: #ff9a94; font-size: 9px; }
     .admin-user button { min-height: 28px; padding: 0 8px; }
+    .admin-user button[data-admin-reset-user] { background: #202a39; color: #9dc1ff; }
     .telegram-contact { display: grid; gap: 8px; padding: 12px 10px; border-top: 1px solid var(--line); }
     .telegram-contact strong { font-size: 11px; }
     .telegram-contact span { color: var(--muted); font-size: 10px; }
@@ -1488,7 +1490,7 @@
       const panel = document.querySelector("#profilePanel");
       const adminMarkup = isAdmin
         ? '<section class="profile-admin"><strong>Администрирование</strong>' +
-            '<small>Пароли не видны. Здесь можно просматривать профили и удалять аккаунты.</small>' +
+            '<small>Текущие пароли не видны. Можно задать новый пароль, просматривать профили и удалять аккаунты.</small>' +
             '<button class="profile-submit" type="button" data-refresh-admin>Обновить список</button>' +
             '<div id="adminUsers"><div class="empty-news">Загружаю пользователей…</div></div></section>'
         : '';
@@ -1551,7 +1553,10 @@
           '</strong><small>Вход: ' + escapeHTML(user.username) + '</small></span>' +
           (user.id === authUser.id
             ? '<small>Это вы</small>'
-            : '<button type="button" data-admin-delete-user="' + escapeHTML(user.id) + '">Удалить</button>') +
+            : '<div class="admin-user-actions">' +
+                '<button type="button" data-admin-reset-user="' + escapeHTML(user.id) + '">Сбросить пароль</button>' +
+                '<button type="button" data-admin-delete-user="' + escapeHTML(user.id) + '">Удалить</button>' +
+              '</div>') +
         '</div>'
       ).join("");
     }
@@ -2193,6 +2198,28 @@
         }
         toast("Аккаунт удалён");
         await refreshAdminUsers();
+        return;
+      }
+      const resetUserButton = event.target.closest("[data-admin-reset-user]");
+      if (resetUserButton && isAdmin) {
+        const newPassword = window.prompt("Введи новый временный пароль (не менее 8 символов). Старый пароль увидеть нельзя.");
+        if (newPassword === null) return;
+        if (newPassword.length < 8 || newPassword.length > 128) {
+          toast("Пароль должен содержать от 8 до 128 символов");
+          return;
+        }
+        const { error } = await supabaseClient.functions.invoke("admin-reset-password", {
+          body: {
+            userId: resetUserButton.dataset.adminResetUser,
+            newPassword
+          }
+        });
+        if (error) {
+          console.error("Could not reset user password", error);
+          toast(error.message || "Не удалось сбросить пароль");
+          return;
+        }
+        toast("Пароль изменён. Передай пользователю новый пароль по безопасному каналу.");
         return;
       }
       if (event.target.closest("[data-sign-out]")) {
