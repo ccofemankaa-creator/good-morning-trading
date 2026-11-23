@@ -589,6 +589,52 @@
       text-decoration: none;
     }
     .empty-news { padding: 18px 10px; color: var(--muted); font-size: 11px; text-align: center; }
+    .chat-messages {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      min-height: 220px;
+      max-height: calc(100dvh - 250px);
+      overflow-y: auto;
+      padding: 10px;
+    }
+    .chat-message {
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #0d1016;
+    }
+    .chat-message.mine { border-color: #385991; }
+    .chat-message-head { display: flex; justify-content: space-between; gap: 8px; }
+    .chat-message-head strong { font-size: 10px; }
+    .chat-message-head time { color: var(--muted); font-size: 8px; }
+    .chat-message p { margin: 5px 0 0; color: #e2e5eb; font-size: 11px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+    .chat-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 72px;
+      gap: 7px;
+      padding: 9px;
+      border-top: 1px solid var(--line);
+    }
+    .chat-form[hidden] { display: none; }
+    .chat-input {
+      min-width: 0;
+      height: 36px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #0d1016;
+      color: var(--text);
+      font: 600 11px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      user-select: text;
+    }
+    .chat-submit {
+      border: 0;
+      border-radius: 7px;
+      background: #262b35;
+      color: var(--text);
+      font-size: 10px;
+    }
     .bottom-nav {
       position: absolute;
       z-index: 40;
@@ -597,7 +643,7 @@
       bottom: calc(8px + env(safe-area-inset-bottom));
       height: 62px;
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(6, 1fr);
       border: 1px solid var(--line);
       border-radius: 16px;
       background: rgba(17,20,27,.97);
@@ -607,7 +653,7 @@
       border-radius: 15px;
       background: transparent;
       color: var(--muted);
-      font-size: 8px;
+      font-size: 7px;
     }
     .nav span { display: block; margin-bottom: 3px; font-size: 14px; }
     .nav.active { background: #232731; color: var(--text); }
@@ -799,6 +845,23 @@
       </section>
     </section>
 
+    <section class="content" id="chatView" hidden>
+      <section class="news-panel chat-panel">
+        <div class="news-head">
+          <strong>Общий чат</strong>
+          <span>Сообщения видны всем игрокам</span>
+        </div>
+        <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
+        <div class="comment-login" id="chatLogin">
+          <button type="button" data-open-profile>Войти или зарегистрироваться</button>, чтобы писать в чат
+        </div>
+        <form class="chat-form" id="chatForm" hidden>
+          <input class="chat-input" name="message" maxlength="240" placeholder="Написать сообщение…" aria-label="Сообщение в чат" required>
+          <button class="chat-submit" type="submit">Отправить</button>
+        </form>
+      </section>
+    </section>
+
     <section class="content" id="portfolioView" hidden>
       <section class="market-panel">
         <div class="market-head">
@@ -822,6 +885,7 @@
 
     <nav class="bottom-nav">
       <button class="nav" data-page="news"><span>▤</span>Новости</button>
+      <button class="nav" data-page="chat"><span>◌</span>Чат</button>
       <button class="nav" data-page="market"><span>⌗</span>Рынок</button>
       <button class="nav active" data-page="terminal"><span>⌁</span>Терминал</button>
       <button class="nav" data-page="portfolio"><span>▥</span>Портфель</button>
@@ -830,7 +894,11 @@
     <div class="toast" id="toast" role="status"></div>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    const SUPABASE_URL = "https://cfcowhxcxhkntokkeean.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9tEWcP72JL9S5TPCkCaP2w_oJxUNrJw";
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
     const stocks = [
       { ticker: "GDM", englishName: "Good Morning", name: "Гуд Морнинг", price: 150, basePrice: 150, history: [144,146,145,147,146,148,147,149,148,150,149,150],
         searchTerms: ["Good Morning"],
@@ -907,9 +975,14 @@
     let newsFilter = "ALL";
     let portfolioSelectedStock = null;
     let profile = null;
+    let authUser = null;
+    let authMode = "register";
     let commentsByNews = {};
+    let chatMessages = [];
     let newsTimer;
     let storageWarningShown = false;
+    let cloudErrorShown = false;
+    let cloudSyncInProgress = false;
     let toastTimer;
 
     const NEWS_INTERVAL_MS = 60 * 60 * 1000;
@@ -917,8 +990,6 @@
     const WEEKLY_NEWS_EVENT_COUNT = 7 * 24;
     const REMOVED_STOCK_TICKERS = new Set(["AVT", "IPH", "XDS", "TEM"]);
     const TELEGRAM_URL = "https://t.me/goodxzxz";
-    const MARKET_SAVE_INTERVAL_MS = 30000;
-    let lastMarketSaveAt = 0;
     const watchlistEl = document.querySelector("#watchlist");
     const canvas = document.querySelector("#chart");
     const balanceEl = document.querySelector("#balance");
@@ -971,22 +1042,12 @@
       return options[Math.floor(Math.random() * options.length)];
     }
     function restoreLocalState() {
-      const savedProfile = loadLocalJSON("temshik.profile.v1", null);
-      if (savedProfile && typeof savedProfile.name === "string") {
-        profile = { name: savedProfile.name.trim().slice(0, 24) };
-      }
-
       const savedRecentStocks = loadLocalJSON("temshik.recentStocks.v1", []);
       if (Array.isArray(savedRecentStocks)) {
         recentStocks = [...new Set(savedRecentStocks.map(ticker =>
           ticker === "GDE" ? "GDM" : ticker
         ).filter(ticker => typeof ticker === "string" &&
           stocks.some(stock => stock.ticker === ticker)))].slice(0, 5);
-      }
-
-      const savedComments = loadLocalJSON("temshik.comments.v1", {});
-      if (savedComments && typeof savedComments === "object" && !Array.isArray(savedComments)) {
-        commentsByNews = savedComments;
       }
 
       const savedAccount = loadLocalJSON("temshik.account.v1", null);
@@ -1306,10 +1367,10 @@
           '<b>' + stock.ticker + ' · ' + (position.side === "long" ? "Лонг" : "Шорт") + '</b>' +
           '<span>' + position.qty + ' шт.</span>' +
           '<b class="' + (pnl >= 0 ? "up" : "down") + '">' + (pnl >= 0 ? "+" : "") + money(pnl) + '</b>' +
-          '<button class="close-btn" data-close="' + index + '">Закрыть</button></div>';
+          '<button class="close-btn" data-close="' + escapeHTML(position.id || String(index)) + '">Закрыть</button></div>';
       }).join("");
       document.querySelectorAll("[data-close]").forEach(button => {
-        button.addEventListener("click", () => closePosition(Number(button.dataset.close)));
+        button.addEventListener("click", () => closePosition(button.dataset.close));
       });
     }
     function renderNews() {
@@ -1326,7 +1387,9 @@
     }
     function renderNewsFeed(feed, items) {
       if (!items.length) {
-        feed.innerHTML = '<div class="empty-news">Пока нет новостей по выбранной акции</div>';
+        feed.innerHTML = authUser
+          ? '<div class="empty-news">Пока нет новостей по выбранной акции</div>'
+          : '<div class="empty-news">Войди в профиль, чтобы видеть общие новости и котировки. <button type="button" data-open-profile>Открыть профиль</button></div>';
         return;
       }
       feed.innerHTML = items.map(item => {
@@ -1336,11 +1399,11 @@
           '<div class="comment-item"><strong>' + escapeHTML(comment.name) + '</strong> ' +
             escapeHTML(comment.text) + '</div>'
         ).join("");
-        const commentForm = profile
+        const commentForm = authUser
           ? '<form class="comment-form" data-comment-form="' + escapeHTML(item.id) + '">' +
               '<input class="comment-input" name="comment" maxlength="240" placeholder="Написать комментарий…" aria-label="Комментарий" required>' +
               '<button class="comment-submit" type="submit">Отправить</button></form>'
-          : '<div class="comment-login"><button type="button" data-open-profile>Создать профиль</button>, чтобы комментировать</div>';
+          : '<div class="comment-login"><button type="button" data-open-profile>Войти или зарегистрироваться</button>, чтобы комментировать</div>';
         return '<article class="news-item">' +
           '<div class="news-item-head">' +
             '<div class="news-impact ' + (item.change >= 0 ? "up" : "down") + '">' +
@@ -1395,15 +1458,35 @@
     }
     function renderProfile() {
       const panel = document.querySelector("#profilePanel");
-      panel.innerHTML = '<section class="profile-panel">' +
-        '<div class="profile-head"><strong>' + (profile ? "Профиль пользователя" : "Создать профиль") +
-          '</strong><small>Профиль хранится только в этом браузере. Комментарии не публикуются для других пользователей.</small></div>' +
-        '<form class="profile-form" id="profileForm">' +
-          '<label for="profileName">Имя или ник</label>' +
-          '<input class="profile-input" id="profileName" name="name" maxlength="24" autocomplete="nickname" value="' +
-            escapeHTML(profile ? profile.name : "") + '" required>' +
-          '<button class="profile-submit" type="submit">' + (profile ? "Сохранить имя" : "Зарегистрироваться") + '</button>' +
-        '</form><div class="profile-pricing"><strong>Условия проекта</strong>' +
+      const accountMarkup = authUser
+        ? '<div class="profile-head"><strong>Профиль пользователя</strong><small>' +
+            escapeHTML(authUser.email || "") + ' · аккаунт общий для всех устройств</small></div>' +
+          '<form class="profile-form" id="profileForm">' +
+            '<label for="profileName">Имя или ник</label>' +
+            '<input class="profile-input" id="profileName" name="name" maxlength="24" autocomplete="nickname" value="' +
+              escapeHTML(profile ? profile.name : "") + '" required>' +
+            '<button class="profile-submit" type="submit">Сохранить имя</button>' +
+          '</form><div class="profile-form"><button class="profile-submit" type="button" data-sign-out>Выйти</button></div>'
+        : '<div class="profile-head"><strong>' +
+            (authMode === "register" ? "Создать профиль" : "Войти в профиль") +
+            '</strong><small>Аккаунт позволит видеть общие цены и новости, писать комментарии и общаться в чате.</small></div>' +
+          '<form class="profile-form" id="authForm">' +
+            (authMode === "register"
+              ? '<label for="profileName">Имя или ник</label><input class="profile-input" id="profileName" name="name" maxlength="24" autocomplete="nickname" required>'
+              : '') +
+            '<label for="authEmail">Электронная почта</label>' +
+            '<input class="profile-input" id="authEmail" name="email" type="email" autocomplete="email" required>' +
+            '<label for="authPassword">Пароль</label>' +
+            '<input class="profile-input" id="authPassword" name="password" type="password" minlength="8" autocomplete="' +
+              (authMode === "register" ? "new-password" : "current-password") + '" required>' +
+            '<button class="profile-submit" type="submit">' +
+              (authMode === "register" ? "Зарегистрироваться" : "Войти") + '</button>' +
+            '<button class="comment-login" type="button" data-auth-mode="' +
+              (authMode === "register" ? "login" : "register") + '">' +
+              (authMode === "register" ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться") +
+            '</button></form>';
+      panel.innerHTML = '<section class="profile-panel">' + accountMarkup +
+        '<div class="profile-pricing"><strong>Условия проекта</strong>' +
           '<p>Создать свою акцию — 100 звёзд</p>' +
           '<p>Пополнить игровой баланс — 50 звёзд</p>' +
           '<small>Другие варианты оплаты обсуждаются в Telegram.</small>' +
@@ -1411,6 +1494,190 @@
           '<span>По вопросам пополнения и комьюнити проекта</span>' +
             '<a class="telegram-link" href="' + TELEGRAM_URL + '" target="_blank" rel="noopener noreferrer">Написать в Telegram · @goodxzxz</a>' +
         '</div></section>';
+    }
+    function showCloudError(error) {
+      console.error("Supabase request failed", error);
+      if (!cloudErrorShown) {
+        cloudErrorShown = true;
+        toast("Не удалось подключиться к общей игре. Проверь настройки Supabase.");
+      }
+    }
+    async function refreshCloudAccount() {
+      if (!authUser) return;
+      const [profileResult, walletResult, positionsResult] = await Promise.all([
+        supabaseClient.from("profiles").select("nickname").eq("id", authUser.id).single(),
+        supabaseClient.from("wallets").select("balance").eq("user_id", authUser.id).single(),
+        supabaseClient.from("positions").select("id, ticker, side, qty, entry_price").eq("user_id", authUser.id)
+      ]);
+      if (profileResult.error) throw profileResult.error;
+      if (walletResult.error) throw walletResult.error;
+      if (positionsResult.error) throw positionsResult.error;
+      profile = { name: profileResult.data.nickname };
+      balance = Number(walletResult.data.balance);
+      positions = positionsResult.data.map(position => ({
+        id: position.id,
+        stock: stocks.findIndex(stock => stock.ticker === position.ticker),
+        side: position.side,
+        qty: Number(position.qty),
+        entry: Number(position.entry_price)
+      })).filter(position => position.stock >= 0);
+    }
+    async function refreshCloudComments() {
+      if (!authUser) return;
+      const { data, error } = await supabaseClient
+        .from("news_comments")
+        .select("id, news_id, user_id, body, created_at, profiles(nickname)")
+        .order("created_at", { ascending: true })
+        .limit(1000);
+      if (error) throw error;
+      commentsByNews = {};
+      data.forEach(comment => {
+        const newsId = String(comment.news_id);
+        if (!Array.isArray(commentsByNews[newsId])) commentsByNews[newsId] = [];
+        commentsByNews[newsId].push({
+          name: comment.profiles ? comment.profiles.nickname : "Игрок",
+          text: comment.body,
+          createdAt: Date.parse(comment.created_at)
+        });
+      });
+    }
+    async function refreshCloudChat() {
+      if (!authUser) return;
+      const feed = document.querySelector("#chatMessages");
+      const wasAtBottom = feed.scrollHeight === 0 ||
+        feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 24;
+      const { data, error } = await supabaseClient.from("chat_messages")
+        .select("id, user_id, body, created_at")
+        .order("created_at", { ascending: true })
+        .limit(200);
+      if (error) throw error;
+      const userIds = [...new Set(data.map(message => message.user_id))];
+      let nicknameByUser = {};
+      if (userIds.length) {
+        const { data: profiles, error: profilesError } = await supabaseClient
+          .from("profiles").select("id, nickname").in("id", userIds);
+        if (profilesError) throw profilesError;
+        nicknameByUser = Object.fromEntries(profiles.map(item => [item.id, item.nickname]));
+      }
+      chatMessages = data.map(message => ({
+        id: message.id,
+        userId: message.user_id,
+        name: nicknameByUser[message.user_id] || "Игрок",
+        text: message.body,
+        createdAt: Date.parse(message.created_at)
+      }));
+      renderChat(wasAtBottom);
+    }
+    function renderChat(scrollToBottom = false) {
+      const feed = document.querySelector("#chatMessages");
+      document.querySelector("#chatLogin").hidden = Boolean(authUser);
+      document.querySelector("#chatForm").hidden = !authUser;
+      if (!authUser) {
+        feed.innerHTML = '<div class="empty-news">Войди, чтобы читать общий чат</div>';
+        return;
+      }
+      if (!chatMessages.length) {
+        feed.innerHTML = '<div class="empty-news">Пока нет сообщений. Начни разговор!</div>';
+        return;
+      }
+      feed.innerHTML = chatMessages.map(message =>
+        '<article class="chat-message ' + (message.userId === authUser.id ? "mine" : "") + '">' +
+          '<div class="chat-message-head"><strong>' + escapeHTML(message.name) + '</strong>' +
+          '<time>' + new Date(message.createdAt).toLocaleTimeString("ru-RU", {
+            hour: "2-digit",
+            minute: "2-digit"
+          }) + '</time></div><p>' + escapeHTML(message.text) + '</p></article>'
+      ).join("");
+      if (scrollToBottom) feed.scrollTop = feed.scrollHeight;
+    }
+    async function syncCloudMarket() {
+      if (!authUser || cloudSyncInProgress) return;
+      cloudSyncInProgress = true;
+      try {
+        const { error: advanceError } = await supabaseClient.rpc("advance_market");
+        if (advanceError) throw advanceError;
+        const [stocksResult, newsResult] = await Promise.all([
+          supabaseClient.from("market_stocks")
+            .select("ticker, price, base_price, updated_at"),
+          supabaseClient.from("market_news")
+            .select("id, ticker, text, change, created_at")
+            .order("created_at", { ascending: false })
+            .limit(NEWS_HISTORY_LIMIT)
+        ]);
+        if (stocksResult.error) throw stocksResult.error;
+        if (newsResult.error) throw newsResult.error;
+        stocksResult.data.forEach(row => {
+          const stock = stocks.find(candidate => candidate.ticker === row.ticker);
+          const price = Number(row.price);
+          if (!stock || !Number.isFinite(price) || price <= 0) return;
+          const previousPrice = stock.price;
+          stock.price = price;
+          stock.basePrice = Number(row.base_price);
+          if (price !== previousPrice) {
+            stock.history.push(price);
+            if (stock.history.length > 12) stock.history.shift();
+            updateStockCandle(stock, Date.parse(row.updated_at) || Date.now(), previousPrice);
+          }
+        });
+        newsItems = newsResult.data.map(item => {
+          const createdAt = Date.parse(item.created_at);
+          return {
+            id: String(item.id),
+            ticker: item.ticker,
+            text: item.text,
+            change: Number(item.change),
+            createdAt,
+            time: new Date(createdAt).toLocaleString("ru-RU", {
+              day: "2-digit",
+              month: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit"
+            })
+          };
+        });
+        await refreshCloudComments();
+        await refreshCloudChat();
+        render();
+        if (!document.querySelector("#stockDetailView").hidden) renderStockDetail();
+      } catch (error) {
+        showCloudError(error);
+      } finally {
+        cloudSyncInProgress = false;
+      }
+    }
+    async function applyAuthSession(session) {
+      authUser = session ? session.user : null;
+      if (!authUser) {
+        profile = null;
+        commentsByNews = {};
+        chatMessages = [];
+        positions = [];
+        balance = 1000;
+        newsItems = [];
+        stocks.forEach(stock => { stock.price = stock.basePrice; });
+        renderProfile();
+        render();
+        return;
+      }
+      try {
+        await refreshCloudAccount();
+        await syncCloudMarket();
+        renderProfile();
+        render();
+      } catch (error) {
+        showCloudError(error);
+      }
+    }
+    async function startCloud() {
+      supabaseClient.auth.onAuthStateChange((_event, session) => {
+        setTimeout(() => { void applyAuthSession(session); }, 0);
+      });
+      const { data, error } = await supabaseClient.auth.getSession();
+      if (error) {
+        showCloudError(error);
+        return;
+      }
+      await applyAuthSession(data.session);
     }
     function renderMarket() {
       const marketList = document.querySelector("#marketList");
@@ -1608,6 +1875,7 @@
       renderNews();
       renderMarket();
       renderPortfolio();
+      renderChat();
     }
     function updateOrderEstimates(price = roundMoney(stocks[selected].price)) {
       const maxQuantity = Math.max(0, Math.floor(balance / price));
@@ -1654,32 +1922,14 @@
       });
     }
     function tickMarket() {
-      const now = Date.now();
-      stocks.forEach(stock => {
-        const previousPrice = stock.price;
-        const move = (Math.random() - 0.5) * 0.0012;
-        stock.price = Math.max(0.01, stock.price * (1 + move));
-        updateStockCandle(stock, now, previousPrice);
-      });
-      renderWatchlist();
-      renderMarket();
-      if (!document.querySelector("#terminalView").hidden) {
-        renderSelectedStock();
-        renderChart();
-        renderPositions();
-      }
-      if (!document.querySelector("#stockDetailView").hidden) {
-        updateStockDetailQuote();
-        renderChart(document.querySelector("#stockDetailChart"), selected);
-      }
-      if (!document.querySelector("#portfolioView").hidden) updatePortfolioPnL();
-      if (now - lastMarketSaveAt >= MARKET_SAVE_INTERVAL_MS) persistMarketState();
+      if (authUser) void syncCloudMarket();
     }
     function showPage(page) {
       document.querySelector("#terminalView").hidden = page !== "terminal";
       document.querySelector("#marketView").hidden = page !== "market";
       document.querySelector("#stockDetailView").hidden = page !== "stockDetail";
       document.querySelector("#newsView").hidden = page !== "news";
+      document.querySelector("#chatView").hidden = page !== "chat";
       document.querySelector("#portfolioView").hidden = page !== "portfolio";
       document.querySelector("#profileView").hidden = page !== "profile";
       if (page === "terminal") requestAnimationFrame(() => {
@@ -1688,8 +1938,14 @@
         renderChart();
       });
       if (page === "stockDetail") requestAnimationFrame(renderStockDetail);
+      if (page === "chat") requestAnimationFrame(() => renderChat(true));
     }
-    function openPosition(side) {
+    async function openPosition(side) {
+      if (!authUser) {
+        toast("Войди в профиль, чтобы торговать");
+        document.querySelector('[data-page="profile"]').click();
+        return;
+      }
       const stock = stocks[selected];
       const input = document.querySelector(side === "buy" ? "#buyQuantity" : "#sellQuantity");
       const quantity = Number(input.value);
@@ -1704,23 +1960,29 @@
         toast("Недостаточно средств для этой сделки");
         return;
       }
-      balance = roundMoney(balance - cost);
-      positions.push({ stock: selected, side: side === "buy" ? "long" : "short", qty: quantity, entry });
-      persistAccountState();
+      const { error } = await supabaseClient.rpc("place_order", {
+        p_ticker: stock.ticker,
+        p_side: side === "buy" ? "long" : "short",
+        p_qty: quantity
+      });
+      if (error) {
+        toast(error.message || "Не удалось открыть позицию");
+        return;
+      }
+      await refreshCloudAccount();
       toast((side === "buy" ? "Лонг " : "Шорт ") + quantity + " акц. " + stock.ticker + " открыт");
       render();
     }
-    function closePosition(index) {
-      const position = positions[index];
-      const stock = stocks[position.stock];
-      const currentPrice = roundMoney(stock.price);
-      const pnl = roundMoney(position.side === "long"
-        ? (currentPrice - position.entry) * position.qty
-        : (position.entry - currentPrice) * position.qty);
-      balance = roundMoney(balance + roundMoney(position.entry * position.qty) + pnl);
-      positions.splice(index, 1);
-      persistAccountState();
-      toast("Позиция закрыта: " + (pnl >= 0 ? "+" : "") + money(pnl));
+    async function closePosition(positionId) {
+      const { error } = await supabaseClient.rpc("close_position", {
+        p_position_id: positionId
+      });
+      if (error) {
+        toast(error.message || "Не удалось закрыть позицию");
+        return;
+      }
+      await refreshCloudAccount();
+      toast("Позиция закрыта");
       render();
     }
 
@@ -1782,35 +2044,114 @@
       renderNews();
     });
     document.querySelectorAll(".news-list").forEach(feed => {
-      feed.addEventListener("submit", event => {
+      feed.addEventListener("submit", async event => {
         const form = event.target.closest("[data-comment-form]");
         if (!form) return;
         event.preventDefault();
-        const text = new FormData(form).get("comment").toString().trim();
-        if (!text || !profile) return;
-        const id = form.dataset.commentForm;
-        if (!Array.isArray(commentsByNews[id])) commentsByNews[id] = [];
-        commentsByNews[id].push({ name: profile.name, text, createdAt: Date.now() });
-        if (saveLocalJSON("temshik.comments.v1", commentsByNews)) {
-          toast("Комментарий сохранён в этом браузере");
+        const text = String(new FormData(form).get("comment") || "").trim();
+        if (!text || !authUser) return;
+        const { error } = await supabaseClient.from("news_comments").insert({
+          news_id: Number(form.dataset.commentForm),
+          user_id: authUser.id,
+          body: text
+        });
+        if (error) {
+          toast(error.message || "Не удалось отправить комментарий");
+          return;
         }
+        await refreshCloudComments();
+        toast("Комментарий опубликован");
         renderNews();
         renderPortfolio();
       });
     });
-    document.querySelector("#profileView").addEventListener("submit", event => {
+    document.querySelector("#chatForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!authUser) {
+        toast("Войди в профиль, чтобы писать в чат");
+        return;
+      }
+      const form = event.currentTarget;
+      const input = form.elements.message;
+      const body = input.value.trim();
+      if (!body) return;
+      const { error } = await supabaseClient.from("chat_messages").insert({
+        user_id: authUser.id,
+        body
+      });
+      if (error) {
+        toast(error.message || "Не удалось отправить сообщение");
+        return;
+      }
+      input.value = "";
+      await refreshCloudChat();
+      renderChat(true);
+    });
+    document.querySelector("#profileView").addEventListener("click", async event => {
+      const modeButton = event.target.closest("[data-auth-mode]");
+      if (modeButton) {
+        authMode = modeButton.dataset.authMode;
+        renderProfile();
+        return;
+      }
+      if (event.target.closest("[data-sign-out]")) {
+        const { error } = await supabaseClient.auth.signOut();
+        if (error) toast(error.message || "Не удалось выйти из профиля");
+      }
+    });
+    document.querySelector("#profileView").addEventListener("submit", async event => {
+      if (event.target.id === "authForm") {
+        event.preventDefault();
+        const formData = new FormData(event.target);
+        const email = String(formData.get("email") || "").trim();
+        const password = String(formData.get("password") || "");
+        try {
+          if (authMode === "register") {
+            const name = String(formData.get("name") || "").trim();
+            if (name.length < 2) {
+              toast("Имя должно содержать хотя бы 2 символа");
+              return;
+            }
+            const { data, error } = await supabaseClient.auth.signUp({
+              email,
+              password,
+              options: { data: { nickname: name.slice(0, 24) } }
+            });
+            if (error) throw error;
+            if (data.session) {
+              toast("Профиль создан");
+            } else {
+              authMode = "login";
+              renderProfile();
+              toast("Проверь почту и подтверди регистрацию");
+            }
+          } else {
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            toast("Вход выполнен");
+          }
+        } catch (error) {
+          console.error("Authentication failed", error);
+          toast(error.message || "Не удалось выполнить вход");
+        }
+        return;
+      }
       if (event.target.id !== "profileForm") return;
       event.preventDefault();
-      const name = new FormData(event.target).get("name").toString().trim();
+      const name = String(new FormData(event.target).get("name") || "").trim();
       if (name.length < 2) {
         toast("Имя должно содержать хотя бы 2 символа");
         return;
       }
+      const { error } = await supabaseClient.from("profiles")
+        .update({ nickname: name.slice(0, 24) }).eq("id", authUser.id);
+      if (error) {
+        toast(error.message || "Не удалось сохранить имя");
+        return;
+      }
       profile = { name: name.slice(0, 24) };
-      if (saveLocalJSON("temshik.profile.v1", profile)) toast("Профиль сохранён");
+      toast("Имя профиля сохранено");
       renderProfile();
-      renderNews();
-      renderPortfolio();
     });
     document.addEventListener("click", event => {
       const button = event.target.closest("[data-open-profile]");
@@ -1832,18 +2173,11 @@
     });
     window.addEventListener("resize", () => renderChart());
 
-    const startupNewsEvent = ensureWeeklyNewsPlan(Date.now());
-    if (startupNewsEvent) {
-      publishMarketNews(startupNewsEvent);
-    } else if (lastNewsAt && Date.now() - lastNewsAt >= NEWS_INTERVAL_MS) {
-      publishMarketNews();
-    } else {
-      persistMarketState();
-    }
     renderProfile();
     render();
-    scheduleNextMarketNews();
-    setInterval(tickMarket, 1000);
+    document.querySelector("#newsSchedule").textContent = "Общие игровые новости и котировки для всех игроков";
+    void startCloud();
+    setInterval(tickMarket, 5000);
   </script>
 </body>
 </html>
