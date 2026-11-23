@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b0d12">
-  <title>Гуд Морнинг — Трейдинг</title>
+  <title>GoodTrader</title>
   <style>
     :root {
       --bg: #0b0d12;
@@ -185,16 +185,18 @@
     }
     @media (max-width: 380px) {
       .watchlist {
-        grid-template-columns: repeat(4, 64px);
-        overflow-x: auto;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        overflow-x: hidden;
         scrollbar-width: none;
       }
       .watchlist::-webkit-scrollbar { display: none; }
     }
     .stock {
       min-width: 0;
-      height: 58px;
-      padding: 7px 4px;
+      height: 68px;
+      display: grid;
+      align-content: center;
+      padding: 6px 5px;
       border: 1px solid var(--line);
       border-radius: 9px;
       background: var(--panel);
@@ -711,17 +713,119 @@
       transition: .2s;
     }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .app-modal {
+      position: absolute;
+      z-index: 100;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(4,6,10,.86);
+      backdrop-filter: blur(8px);
+    }
+    .app-modal[hidden] { display: none; }
+    .bonus-card {
+      width: 100%;
+      overflow: hidden;
+      border: 1px solid #4b5a78;
+      border-radius: 18px;
+      background: linear-gradient(145deg, #171d29, #10131a);
+      box-shadow: 0 24px 60px rgba(0,0,0,.55);
+      text-align: center;
+    }
+    .bonus-card-main { padding: 26px 18px 20px; }
+    .bonus-icon {
+      width: 58px;
+      height: 58px;
+      display: grid;
+      place-items: center;
+      margin: 0 auto 14px;
+      border: 1px solid #5771a6;
+      border-radius: 16px;
+      background: #23314b;
+      color: #b9cff9;
+      font-size: 24px;
+    }
+    .bonus-card h2 { margin: 0; font-size: 22px; }
+    .bonus-card p { margin: 8px 0 0; color: #abb3c2; font-size: 12px; line-height: 1.5; }
+    .bonus-amount { margin: 18px 0 0; color: var(--green); font-size: 34px; font-weight: 900; }
+    .bonus-card button {
+      width: calc(100% - 36px);
+      min-height: 46px;
+      margin: 18px 18px;
+      border: 0;
+      border-radius: 10px;
+      background: #4167ad;
+      color: #fff;
+      font-size: 12px;
+    }
+    .profile-account {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    .profile-account span { color: var(--muted); font-size: 9px; }
+    .profile-account strong { display: block; margin-top: 2px; font-size: 13px; }
+    .profile-logout {
+      min-height: 32px;
+      padding: 0 11px;
+      border: 1px solid #4b2d2d;
+      border-radius: 8px;
+      background: #271919;
+      color: #ffaaa4;
+      font-size: 10px;
+    }
+    .profile-info {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+    }
+    .profile-info-card {
+      display: grid;
+      gap: 5px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #0d1016;
+    }
+    .profile-info-card strong { font-size: 11px; }
+    .profile-info-card span { color: var(--muted); font-size: 9px; line-height: 1.45; }
+    .profile-info-card a { color: #8eb6ff; font-size: 10px; text-decoration: none; }
+    .task-strip {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 92px;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 10px 0;
+      padding: 8px;
+      border: 1px solid #3f4a61;
+      border-radius: 10px;
+      background: #151a24;
+    }
+    .task-strip strong { display: block; font-size: 10px; }
+    .task-strip span { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; }
+    .task-strip button {
+      min-height: 34px;
+      border: 0;
+      border-radius: 8px;
+      background: #26344d;
+      color: #bcd2ff;
+      font-size: 9px;
+    }
   </style>
 </head>
 <body>
   <main class="app">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-mark">GM</div>
-        <div class="brand-name">Гуд Морнинг
+        <div class="brand-mark">GT</div>
+        <div class="brand-name">GoodTrader
           <small>Торговый терминал</small>
           <a class="brand-link" href="https://t.me/goodxzxz" target="_blank" rel="noopener noreferrer">
-            Любой может создать свою акцию · Telegram
+            Связь с администратором
           </a>
         </div>
       </div>
@@ -753,7 +857,7 @@
         <div class="chart-head">
           <div class="chart-title">
             <strong id="selectedName">GDM</strong>
-            <small id="selectedFullName">Гуд Морнинг</small>
+            <small id="selectedFullName">GoodTrader</small>
           </div>
           <div class="chart-price">
             <strong id="selectedPrice">$150.00</strong>
@@ -769,6 +873,7 @@
         </div>
         <canvas id="chart" width="410" height="228"></canvas>
       </section>
+
 
       <section class="order-card">
         <div class="order buy">
@@ -815,7 +920,7 @@
       <button class="detail-back" id="stockDetailBack" type="button">← Все акции</button>
       <section class="stock-detail-summary">
         <div class="stock-detail-heading">
-          <div><small id="stockDetailTicker">GDM</small><h1 id="stockDetailName">Гуд Морнинг</h1></div>
+          <div><small id="stockDetailTicker">GDM</small><h1 id="stockDetailName">GoodTrader</h1></div>
           <div class="stock-detail-quote">
             <strong id="stockDetailPrice">$150.00</strong>
             <small id="stockDetailChange" class="up">+0.00%</small>
@@ -909,6 +1014,28 @@
       <button class="nav" data-page="portfolio"><span>▥</span>Портфель</button>
       <button class="nav" data-page="profile"><span>◎</span>Профиль</button>
     </nav>
+    <div class="app-modal" id="welcomeBonusModal" hidden>
+      <section class="bonus-card">
+        <div class="bonus-card-main">
+          <div class="bonus-icon">GT</div>
+          <h2>Добро пожаловать</h2>
+          <p>Подарок за регистрацию на стартовый счёт GoodTrader</p>
+          <div class="bonus-amount">+500$</div>
+        </div>
+        <button type="button" data-close-welcome>Начать торговлю</button>
+      </section>
+    </div>
+    <div class="app-modal" id="installTaskModal" hidden>
+      <section class="bonus-card">
+        <div class="bonus-card-main">
+          <div class="bonus-icon">⌂</div>
+          <h2>Установи приложение</h2>
+          <p>На iPhone: открой меню браузера и выбери «На экран Домой». На Android: нажми «Добавить на главный экран».</p>
+          <div class="bonus-amount">+1000$</div>
+        </div>
+        <button type="button" data-claim-install>Установил и получил бонус</button>
+      </section>
+    </div>
     <div class="toast" id="toast" role="status"></div>
   </main>
 
@@ -918,13 +1045,13 @@
     const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9tEWcP72JL9S5TPCkCaP2w_oJxUNrJw";
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
     const stocks = [
-      { ticker: "GDM", englishName: "Good Morning", name: "Гуд Морнинг", price: 150, basePrice: 150, history: [144,146,145,147,146,148,147,149,148,150,149,150],
-        searchTerms: ["Good Morning"],
+      { ticker: "GDM", englishName: "GoodTrader", name: "GoodTrader", price: 150, basePrice: 150, history: [144,146,145,147,146,148,147,149,148,150,149,150],
+        searchTerms: ["GoodTrader", "Good Trader"],
         description: "Мне нечем заняться, поэтому я создал(а) этот проект. Его цена зависит от моего настроения. За новостями можно следить в Telegram-канале.",
-        news: { up: "Настроение автора улучшилось — интерес к Гуд Морнингу вырос", down: "Настроение автора ухудшилось — цена Гуд Морнинга снизилась" },
+        news: { up: "Настроение автора улучшилось — интерес к GoodTrader вырос", down: "Настроение автора ухудшилось — цена GoodTrader снизилась" },
         newsVariants: {
-          up: ["Автор поделился хорошей новостью — акции GDM укрепились", "Позитивное настроение создателя проекта поддержало котировки", "У автора удачный день — интерес к Гуд Морнингу вырос"],
-          down: ["Автору не до проекта — котировки Гуд Морнинга просели", "Настроение создателя ухудшилось, интерес к GDM снизился", "Автор сообщил о плохом дне — цена Гуд Морнинга пошла вниз"]
+          up: ["Автор поделился хорошей новостью — акции GDM укрепились", "Позитивное настроение создателя проекта поддержало котировки", "У автора удачный день — интерес к GoodTrader вырос"],
+          down: ["Автору не до проекта — котировки GoodTrader просели", "Настроение создателя ухудшилось, интерес к GDM снизился", "Автор сообщил о плохом дне — цена GoodTrader пошла вниз"]
         } },
       { ticker: "NFR", englishName: "Nefor", name: "Нефор", price: 95, basePrice: 95, history: [87,89,88,91,90,92,91,93,92,95,94,95],
         searchTerms: ["Русский рэп", "Russian rap"],
@@ -985,7 +1112,7 @@
     let watchlistMode = "gainers";
     let recentStocks = [];
     let selectedTimeframe = 60;
-    let balance = 1000;
+    let balance = 500;
     let positions = [];
     let newsItems = [];
     let weeklyNewsPlan = [];
@@ -1003,6 +1130,7 @@
     let cloudErrorShown = false;
     let cloudSyncInProgress = false;
     let toastTimer;
+    let chatRealtimeChannel = null;
 
     const NEWS_INTERVAL_MS = 60 * 60 * 1000;
     const NEWS_HISTORY_LIMIT = 100;
@@ -1031,7 +1159,7 @@
       }
     }
     function normalizeUsername(value) {
-      return String(value || "").normalize("NFC").trim();
+      return String(value || "").normalize("NFKC").trim();
     }
     async function usernameAuthEmail(username) {
       const normalized = normalizeUsername(username).toLocaleLowerCase("ru-RU");
@@ -1217,8 +1345,7 @@
       }));
       const pinnedStock = rankedStocks.find(item => item.stock.ticker === "GDM");
       const visibleStocks = watchlistMode === "gainers"
-        ? [pinnedStock, ...rankedStocks.filter(item => item.stock.ticker !== "GDM")
-          .sort((left, right) => right.change - left.change)]
+        ? rankedStocks
         : [pinnedStock, ...recentStocks.filter(ticker => ticker !== "GDM")
           .map(ticker => rankedStocks.find(item => item.stock.ticker === ticker)).filter(Boolean)];
       document.querySelectorAll("[data-watchlist-mode]").forEach(button => {
@@ -1502,14 +1629,18 @@
             '<div id="adminUsers"><div class="empty-news">Загружаю пользователей…</div></div></section>'
         : '';
       const accountMarkup = authUser
-        ? '<div class="profile-head"><strong>Профиль пользователя</strong><small>Ник для входа: ' +
-            escapeHTML(profile ? profile.username : "") + ' · аккаунт общий для всех устройств</small></div>' +
-          '<form class="profile-form" id="profileForm">' +
-            '<label for="profileName">Отображаемое имя</label>' +
-            '<input class="profile-input" id="profileName" name="name" maxlength="24" autocomplete="nickname" value="' +
-              escapeHTML(profile ? profile.name : "") + '" required>' +
-            '<button class="profile-submit" type="submit">Сохранить имя</button>' +
-          '</form><div class="profile-form"><button class="profile-submit" type="button" data-sign-out>Выйти</button></div>'
+        ? '<div class="profile-account"><div><span>Никнейм</span><strong>' +
+            escapeHTML(profile ? profile.username : "") + '</strong></div>' +
+          '<button class="profile-logout" type="button" data-sign-out>Выйти</button></div>' +
+          '<div class="task-strip"><div><strong>Установи GoodTrader на главный экран</strong>' +
+            '<span>Задание · награда 1000$</span></div>' +
+            '<button type="button" data-open-install-task>Открыть</button></div>' +
+          '<div class="profile-info">' +
+            '<div class="profile-info-card"><strong>Связь с администратором</strong>' +
+              '<a href="' + TELEGRAM_URL + '" target="_blank" rel="noopener noreferrer">Написать в Telegram · @goodxzxz</a></div>' +
+            '<div class="profile-info-card"><strong>Условия проекта</strong>' +
+              '<span>Симулятор трейдинга. Пополнение: 200 ₽ — 1000 игровой валюты. Создание и управление собственной акцией: 400 ₽ через администратора.</span></div>' +
+          '</div>'
         : '<div class="profile-head"><strong>' +
             (authMode === "register" ? "Создать профиль" : "Войти в профиль") +
             '</strong><small>Почта не нужна. Придумай уникальный ник и пароль. Аккаунт позволит видеть общие цены и новости, писать комментарии и общаться в чате.</small></div>' +
@@ -1526,16 +1657,14 @@
               (authMode === "register" ? "login" : "register") + '">' +
               (authMode === "register" ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться") +
             '</button></form>';
+      const sharedInfoMarkup = '<div class="profile-info">' +
+        '<div class="profile-info-card"><strong>Связь с администратором</strong>' +
+          '<a href="' + TELEGRAM_URL + '" target="_blank" rel="noopener noreferrer">Написать в Telegram · @goodxzxz</a></div>' +
+        '<div class="profile-info-card"><strong>Условия проекта</strong>' +
+          '<span>Симулятор трейдинга. Пополнение: 200 ₽ — 1000 игровой валюты. Создание и управление собственной акцией: 400 ₽ через администратора.</span></div>' +
+        '</div>';
       panel.innerHTML = '<section class="profile-panel">' + accountMarkup +
-        adminMarkup +
-        '<div class="profile-pricing"><strong>Условия проекта</strong>' +
-          '<p>Создать свою акцию — 100 звёзд</p>' +
-          '<p>Пополнить игровой баланс — 50 звёзд</p>' +
-          '<small>Другие варианты оплаты обсуждаются в Telegram.</small>' +
-        '</div><div class="telegram-contact"><strong>Связь с админом</strong>' +
-          '<span>По вопросам пополнения и комьюнити проекта</span>' +
-            '<a class="telegram-link" href="' + TELEGRAM_URL + '" target="_blank" rel="noopener noreferrer">Написать в Telegram · @goodxzxz</a>' +
-        '</div></section>';
+        adminMarkup + (authUser ? '' : sharedInfoMarkup) + '</section>';
       if (isAdmin) void refreshAdminUsers();
     }
     async function refreshAdminUsers() {
@@ -1601,10 +1730,9 @@
       })).filter(position => position.stock >= 0);
     }
     async function refreshCloudComments() {
-      if (!authUser) return;
       const { data, error } = await supabaseClient
         .from("news_comments")
-        .select("id, news_id, user_id, body, created_at, profiles(nickname)")
+        .select("id, news_id, body, created_at, profiles(nickname)")
         .order("created_at", { ascending: true })
         .limit(1000);
       if (error) throw error;
@@ -1620,7 +1748,6 @@
       });
     }
     async function refreshCloudChat() {
-      if (!authUser) return;
       const feed = document.querySelector("#chatMessages");
       const wasAtBottom = feed.scrollHeight === 0 ||
         feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 24;
@@ -1650,16 +1777,12 @@
       const feed = document.querySelector("#chatMessages");
       document.querySelector("#chatLogin").hidden = Boolean(authUser);
       document.querySelector("#chatForm").hidden = !authUser;
-      if (!authUser) {
-        feed.innerHTML = '<div class="empty-news">Войди, чтобы читать общий чат</div>';
-        return;
-      }
       if (!chatMessages.length) {
         feed.innerHTML = '<div class="empty-news">Пока нет сообщений. Начни разговор!</div>';
         return;
       }
       feed.innerHTML = chatMessages.map(message =>
-        '<article class="chat-message ' + (message.userId === authUser.id ? "mine" : "") + '">' +
+        '<article class="chat-message ' + (authUser && message.userId === authUser.id ? "mine" : "") + '">' +
           '<div class="chat-message-head"><strong>' + escapeHTML(message.name) + '</strong>' +
           '<time>' + new Date(message.createdAt).toLocaleTimeString("ru-RU", {
             hour: "2-digit",
@@ -1673,7 +1796,7 @@
       if (scrollToBottom) feed.scrollTop = feed.scrollHeight;
     }
     async function syncCloudMarket() {
-      if (!authUser || cloudSyncInProgress) return;
+      if (cloudSyncInProgress) return;
       cloudSyncInProgress = true;
       try {
         const { error: advanceError } = await supabaseClient.rpc("advance_market");
@@ -1735,11 +1858,12 @@
         commentsByNews = {};
         chatMessages = [];
         positions = [];
-        balance = 1000;
+        balance = 500;
         newsItems = [];
         stocks.forEach(stock => { stock.price = stock.basePrice; });
         renderProfile();
         render();
+        await syncCloudMarket();
         return;
       }
       try {
@@ -1755,6 +1879,17 @@
       supabaseClient.auth.onAuthStateChange((_event, session) => {
         setTimeout(() => { void applyAuthSession(session); }, 0);
       });
+      if (!chatRealtimeChannel) {
+        chatRealtimeChannel = supabaseClient.channel("public-chat")
+          .on("postgres_changes", {
+            event: "*",
+            schema: "public",
+            table: "chat_messages"
+          }, () => {
+            void refreshCloudChat().catch(showCloudError);
+          })
+          .subscribe();
+      }
       const { data, error } = await supabaseClient.auth.getSession();
       if (error) {
         showCloudError(error);
@@ -2005,7 +2140,7 @@
       });
     }
     function tickMarket() {
-      if (authUser) void syncCloudMarket();
+      void syncCloudMarket();
     }
     function showPage(page) {
       document.querySelector("#terminalView").hidden = page !== "terminal";
@@ -2154,12 +2289,15 @@
       }
       const form = event.currentTarget;
       const input = form.elements.message;
-      const body = input.value.trim();
+      const body = input.value.trim().slice(0, 240);
       if (!body) return;
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
       const { error } = await supabaseClient.from("chat_messages").insert({
         user_id: authUser.id,
         body
       });
+      submitButton.disabled = false;
       if (error) {
         toast(error.message || "Не удалось отправить сообщение");
         return;
@@ -2186,6 +2324,10 @@
       if (modeButton) {
         authMode = modeButton.dataset.authMode;
         renderProfile();
+        return;
+      }
+      if (event.target.closest("[data-open-install-task]")) {
+        document.querySelector("#installTaskModal").hidden = false;
         return;
       }
       if (event.target.closest("[data-refresh-admin]")) {
@@ -2238,6 +2380,8 @@
         const formData = new FormData(event.target);
         const identifier = normalizeUsername(formData.get("username"));
         const password = String(formData.get("password") || "");
+        const submitButton = event.target.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
         try {
           if (authMode === "register") {
             const username = identifier;
@@ -2267,6 +2411,7 @@
               toast("Для регистрации без почты администратор должен отключить подтверждение email");
               return;
             }
+            document.querySelector("#welcomeBonusModal").hidden = false;
             toast("Профиль создан");
           } else {
             const email = await authEmailForLogin(identifier);
@@ -2278,7 +2423,13 @@
           console.error("Authentication failed", error);
           toast(error.code === "23505" || error.code === "email_exists" || error.code === "user_already_exists"
             ? "Этот ник уже занят"
-            : error.message || "Не удалось выполнить вход");
+            : error.message === "Invalid login credentials"
+              ? "Неверный ник или пароль"
+              : error.message === "Email rate limit exceeded"
+                ? "Слишком много попыток. Повтори позже"
+                : error.message || "Не удалось выполнить вход");
+        } finally {
+          submitButton.disabled = false;
         }
         return;
       }
@@ -2295,11 +2446,45 @@
         toast(error.message || "Не удалось сохранить имя");
         return;
       }
-      profile = { name: name.slice(0, 24) };
+      profile = {
+        name: name.slice(0, 24),
+        username: profile ? profile.username : name.slice(0, 24)
+      };
       toast("Имя профиля сохранено");
       renderProfile();
     });
     document.addEventListener("click", event => {
+      if (event.target.closest("[data-close-welcome]")) {
+        document.querySelector("#welcomeBonusModal").hidden = true;
+        return;
+      }
+      if (event.target.closest("[data-claim-install]")) {
+        document.querySelector("#installTaskModal").hidden = true;
+        if (!authUser) {
+          toast("Сначала войди в профиль");
+          return;
+        }
+        void (async () => {
+          const key = "goodtrader.installReward." + authUser.id;
+          if (loadLocalJSON(key, false)) {
+            toast("Бонус за установку уже получен");
+            return;
+          }
+          const { error } = await supabaseClient.rpc("claim_task_reward", {
+            p_task: "install_app",
+            p_reward: 1000
+          });
+          if (error) {
+            toast(error.message || "Не удалось получить бонус");
+            return;
+          }
+          saveLocalJSON(key, true);
+          await refreshCloudAccount();
+          toast("Бонус 1000$ за установку получен");
+          render();
+        })();
+        return;
+      }
       const button = event.target.closest("[data-open-profile]");
       if (!button) return;
       document.querySelectorAll(".nav").forEach(item => item.classList.remove("active"));
@@ -2323,7 +2508,7 @@
     render();
     document.querySelector("#newsSchedule").textContent = "Общие игровые новости и котировки для всех игроков";
     void startCloud();
-    setInterval(tickMarket, 5000);
+    setInterval(tickMarket, 1000);
   </script>
 </body>
 </html>
