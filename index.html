@@ -1174,7 +1174,10 @@
     }
     async function authEmailForLogin(value) {
       const identifier = normalizeUsername(value);
-      return identifier.includes("@") ? identifier.toLowerCase() : usernameAuthEmail(identifier);
+      if (identifier.includes("@")) {
+        throw new Error("Для входа нужен ник, а не почта");
+      }
+      return usernameAuthEmail(identifier);
     }
     function saveLocalJSON(key, value) {
       try {
@@ -1645,9 +1648,9 @@
             (authMode === "register" ? "Создать профиль" : "Войти в профиль") +
             '</strong><small>Почта не нужна. Придумай уникальный ник и пароль. Аккаунт позволит видеть общие цены и новости, писать комментарии и общаться в чате.</small></div>' +
           '<form class="profile-form" id="authForm">' +
-            '<label for="authUsername">' + (authMode === "register" ? "Ник (для входа)" : "Ник или почта старого аккаунта") + '</label>' +
+            '<label for="authUsername">Ник (для входа)</label>' +
             '<input class="profile-input" id="authUsername" name="username" maxlength="' +
-              (authMode === "register" ? "24" : "254") + '" autocomplete="username" required>' +
+              "24" + '" autocomplete="username" required>' +
             '<label for="authPassword">Пароль</label>' +
             '<input class="profile-input" id="authPassword" name="password" type="password" minlength="8" autocomplete="' +
               (authMode === "register" ? "new-password" : "current-password") + '" required>' +
@@ -1732,16 +1735,26 @@
     async function refreshCloudComments() {
       const { data, error } = await supabaseClient
         .from("news_comments")
-        .select("id, news_id, body, created_at, profiles(nickname)")
+        .select("id, news_id, body, created_at, user_id")
         .order("created_at", { ascending: true })
         .limit(1000);
       if (error) throw error;
+      const userIds = [...new Set((data || []).map(comment => comment.user_id).filter(Boolean))];
+      let nicknameByUser = {};
+      if (userIds.length) {
+        const { data: profiles, error: profilesError } = await supabaseClient
+          .from("profiles")
+          .select("id, nickname")
+          .in("id", userIds);
+        if (profilesError) throw profilesError;
+        nicknameByUser = Object.fromEntries((profiles || []).map(item => [item.id, item.nickname]));
+      }
       commentsByNews = {};
-      data.forEach(comment => {
+      (data || []).forEach(comment => {
         const newsId = String(comment.news_id);
         if (!Array.isArray(commentsByNews[newsId])) commentsByNews[newsId] = [];
         commentsByNews[newsId].push({
-          name: comment.profiles ? comment.profiles.nickname : "Игрок",
+          name: nicknameByUser[comment.user_id] || "Игрок",
           text: comment.body,
           createdAt: Date.parse(comment.created_at)
         });
