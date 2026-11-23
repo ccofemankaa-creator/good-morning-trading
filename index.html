@@ -575,6 +575,14 @@
     .profile-pricing { display: grid; gap: 7px; padding: 12px 10px; border-top: 1px solid var(--line); }
     .profile-pricing strong { font-size: 11px; }
     .profile-pricing p, .profile-pricing small { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .profile-admin { display: grid; gap: 8px; padding: 12px 10px; border-top: 1px solid var(--line); }
+    .profile-admin > strong { font-size: 11px; }
+    .profile-admin > small, .admin-user small { color: var(--muted); font-size: 9px; line-height: 1.4; }
+    .admin-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+    .admin-user > span { min-width: 0; overflow-wrap: anywhere; }
+    .admin-user strong, .admin-user small { display: block; }
+    .admin-user button, .chat-message-delete { border: 0; border-radius: 6px; background: #352020; color: #ff9a94; font-size: 9px; }
+    .admin-user button { min-height: 28px; padding: 0 8px; }
     .telegram-contact { display: grid; gap: 8px; padding: 12px 10px; border-top: 1px solid var(--line); }
     .telegram-contact strong { font-size: 11px; }
     .telegram-contact span { color: var(--muted); font-size: 10px; }
@@ -609,6 +617,7 @@
     .chat-message-head strong { font-size: 10px; }
     .chat-message-head time { color: var(--muted); font-size: 8px; }
     .chat-message p { margin: 5px 0 0; color: #e2e5eb; font-size: 11px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+    .chat-message-delete { padding: 3px 6px; }
     .chat-form {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 72px;
@@ -976,6 +985,7 @@
     let portfolioSelectedStock = null;
     let profile = null;
     let authUser = null;
+    let isAdmin = false;
     let authMode = "register";
     let commentsByNews = {};
     let chatMessages = [];
@@ -1010,6 +1020,24 @@
         reportStorageError("read", error);
         return fallback;
       }
+    }
+    function normalizeUsername(value) {
+      return String(value || "").normalize("NFC").trim();
+    }
+    async function usernameAuthEmail(username) {
+      const normalized = normalizeUsername(username).toLocaleLowerCase("ru-RU");
+      if (typeof crypto === "undefined" || !crypto.subtle || typeof TextEncoder === "undefined") {
+        throw new Error("Регистрация по нику требует современный браузер");
+      }
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
+      const hash = Array.from(new Uint8Array(digest).slice(0, 20), byte =>
+        byte.toString(16).padStart(2, "0")
+      ).join("");
+      return hash + "@players.good-morning-trading.invalid";
+    }
+    async function authEmailForLogin(value) {
+      const identifier = normalizeUsername(value);
+      return identifier.includes("@") ? identifier.toLowerCase() : usernameAuthEmail(identifier);
     }
     function saveLocalJSON(key, value) {
       try {
@@ -1458,24 +1486,28 @@
     }
     function renderProfile() {
       const panel = document.querySelector("#profilePanel");
+      const adminMarkup = isAdmin
+        ? '<section class="profile-admin"><strong>Администрирование</strong>' +
+            '<small>Пароли не видны. Здесь можно просматривать профили и удалять аккаунты.</small>' +
+            '<button class="profile-submit" type="button" data-refresh-admin>Обновить список</button>' +
+            '<div id="adminUsers"><div class="empty-news">Загружаю пользователей…</div></div></section>'
+        : '';
       const accountMarkup = authUser
-        ? '<div class="profile-head"><strong>Профиль пользователя</strong><small>' +
-            escapeHTML(authUser.email || "") + ' · аккаунт общий для всех устройств</small></div>' +
+        ? '<div class="profile-head"><strong>Профиль пользователя</strong><small>Ник для входа: ' +
+            escapeHTML(profile ? profile.username : "") + ' · аккаунт общий для всех устройств</small></div>' +
           '<form class="profile-form" id="profileForm">' +
-            '<label for="profileName">Имя или ник</label>' +
+            '<label for="profileName">Отображаемое имя</label>' +
             '<input class="profile-input" id="profileName" name="name" maxlength="24" autocomplete="nickname" value="' +
               escapeHTML(profile ? profile.name : "") + '" required>' +
             '<button class="profile-submit" type="submit">Сохранить имя</button>' +
           '</form><div class="profile-form"><button class="profile-submit" type="button" data-sign-out>Выйти</button></div>'
         : '<div class="profile-head"><strong>' +
             (authMode === "register" ? "Создать профиль" : "Войти в профиль") +
-            '</strong><small>Аккаунт позволит видеть общие цены и новости, писать комментарии и общаться в чате.</small></div>' +
+            '</strong><small>Почта не нужна. Придумай уникальный ник и пароль. Аккаунт позволит видеть общие цены и новости, писать комментарии и общаться в чате.</small></div>' +
           '<form class="profile-form" id="authForm">' +
-            (authMode === "register"
-              ? '<label for="profileName">Имя или ник</label><input class="profile-input" id="profileName" name="name" maxlength="24" autocomplete="nickname" required>'
-              : '') +
-            '<label for="authEmail">Электронная почта</label>' +
-            '<input class="profile-input" id="authEmail" name="email" type="email" autocomplete="email" required>' +
+            '<label for="authUsername">' + (authMode === "register" ? "Ник (для входа)" : "Ник или почта старого аккаунта") + '</label>' +
+            '<input class="profile-input" id="authUsername" name="username" maxlength="' +
+              (authMode === "register" ? "24" : "254") + '" autocomplete="username" required>' +
             '<label for="authPassword">Пароль</label>' +
             '<input class="profile-input" id="authPassword" name="password" type="password" minlength="8" autocomplete="' +
               (authMode === "register" ? "new-password" : "current-password") + '" required>' +
@@ -1486,6 +1518,7 @@
               (authMode === "register" ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться") +
             '</button></form>';
       panel.innerHTML = '<section class="profile-panel">' + accountMarkup +
+        adminMarkup +
         '<div class="profile-pricing"><strong>Условия проекта</strong>' +
           '<p>Создать свою акцию — 100 звёзд</p>' +
           '<p>Пополнить игровой баланс — 50 звёзд</p>' +
@@ -1494,6 +1527,33 @@
           '<span>По вопросам пополнения и комьюнити проекта</span>' +
             '<a class="telegram-link" href="' + TELEGRAM_URL + '" target="_blank" rel="noopener noreferrer">Написать в Telegram · @goodxzxz</a>' +
         '</div></section>';
+      if (isAdmin) void refreshAdminUsers();
+    }
+    async function refreshAdminUsers() {
+      if (!isAdmin) return;
+      const container = document.querySelector("#adminUsers");
+      if (!container) return;
+      const { data, error } = await supabaseClient.from("profiles")
+        .select("id, username, nickname, created_at")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) {
+        console.error("Could not load admin user list", error);
+        container.innerHTML = '<div class="empty-news">Не удалось загрузить список пользователей</div>';
+        return;
+      }
+      if (!data.length) {
+        container.innerHTML = '<div class="empty-news">Пользователей пока нет</div>';
+        return;
+      }
+      container.innerHTML = data.map(user =>
+        '<div class="admin-user"><span><strong>' + escapeHTML(user.nickname) +
+          '</strong><small>Вход: ' + escapeHTML(user.username) + '</small></span>' +
+          (user.id === authUser.id
+            ? '<small>Это вы</small>'
+            : '<button type="button" data-admin-delete-user="' + escapeHTML(user.id) + '">Удалить</button>') +
+        '</div>'
+      ).join("");
     }
     function showCloudError(error) {
       console.error("Supabase request failed", error);
@@ -1504,15 +1564,21 @@
     }
     async function refreshCloudAccount() {
       if (!authUser) return;
-      const [profileResult, walletResult, positionsResult] = await Promise.all([
-        supabaseClient.from("profiles").select("nickname").eq("id", authUser.id).single(),
+      const [profileResult, walletResult, positionsResult, adminResult] = await Promise.all([
+        supabaseClient.from("profiles").select("username, nickname").eq("id", authUser.id).single(),
         supabaseClient.from("wallets").select("balance").eq("user_id", authUser.id).single(),
-        supabaseClient.from("positions").select("id, ticker, side, qty, entry_price").eq("user_id", authUser.id)
+        supabaseClient.from("positions").select("id, ticker, side, qty, entry_price").eq("user_id", authUser.id),
+        supabaseClient.from("admin_users").select("user_id").eq("user_id", authUser.id).maybeSingle()
       ]);
       if (profileResult.error) throw profileResult.error;
       if (walletResult.error) throw walletResult.error;
       if (positionsResult.error) throw positionsResult.error;
-      profile = { name: profileResult.data.nickname };
+      if (adminResult.error) throw adminResult.error;
+      profile = {
+        name: profileResult.data.nickname,
+        username: profileResult.data.username || profileResult.data.nickname
+      };
+      isAdmin = Boolean(adminResult.data);
       balance = Number(walletResult.data.balance);
       positions = positionsResult.data.map(position => ({
         id: position.id,
@@ -1586,7 +1652,11 @@
           '<time>' + new Date(message.createdAt).toLocaleTimeString("ru-RU", {
             hour: "2-digit",
             minute: "2-digit"
-          }) + '</time></div><p>' + escapeHTML(message.text) + '</p></article>'
+          }) + '</time></div><p>' + escapeHTML(message.text) + '</p>' +
+          (isAdmin
+            ? '<button class="chat-message-delete" type="button" data-delete-chat-message="' + message.id + '">Удалить сообщение</button>'
+            : '') +
+        '</article>'
       ).join("");
       if (scrollToBottom) feed.scrollTop = feed.scrollHeight;
     }
@@ -1649,6 +1719,7 @@
       authUser = session ? session.user : null;
       if (!authUser) {
         profile = null;
+        isAdmin = false;
         commentsByNews = {};
         chatMessages = [];
         positions = [];
@@ -2087,11 +2158,41 @@
       await refreshCloudChat();
       renderChat(true);
     });
+    document.querySelector("#chatMessages").addEventListener("click", async event => {
+      const button = event.target.closest("[data-delete-chat-message]");
+      if (!button || !isAdmin) return;
+      const messageId = Number(button.dataset.deleteChatMessage);
+      if (!Number.isSafeInteger(messageId) || !window.confirm("Удалить это сообщение?")) return;
+      const { error } = await supabaseClient.from("chat_messages").delete().eq("id", messageId);
+      if (error) {
+        toast(error.message || "Не удалось удалить сообщение");
+        return;
+      }
+      await refreshCloudChat();
+      toast("Сообщение удалено");
+    });
     document.querySelector("#profileView").addEventListener("click", async event => {
       const modeButton = event.target.closest("[data-auth-mode]");
       if (modeButton) {
         authMode = modeButton.dataset.authMode;
         renderProfile();
+        return;
+      }
+      if (event.target.closest("[data-refresh-admin]")) {
+        await refreshAdminUsers();
+        return;
+      }
+      const deleteUserButton = event.target.closest("[data-admin-delete-user]");
+      if (deleteUserButton && isAdmin) {
+        const userId = deleteUserButton.dataset.adminDeleteUser;
+        if (!window.confirm("Удалить аккаунт пользователя? Его сообщения и игровой прогресс тоже удалятся.")) return;
+        const { error } = await supabaseClient.rpc("admin_delete_user", { p_user_id: userId });
+        if (error) {
+          toast(error.message || "Не удалось удалить аккаунт");
+          return;
+        }
+        toast("Аккаунт удалён");
+        await refreshAdminUsers();
         return;
       }
       if (event.target.closest("[data-sign-out]")) {
@@ -2103,36 +2204,49 @@
       if (event.target.id === "authForm") {
         event.preventDefault();
         const formData = new FormData(event.target);
-        const email = String(formData.get("email") || "").trim();
+        const identifier = normalizeUsername(formData.get("username"));
         const password = String(formData.get("password") || "");
         try {
           if (authMode === "register") {
-            const name = String(formData.get("name") || "").trim();
-            if (name.length < 2) {
+            const username = identifier;
+            if (Array.from(username).length < 2) {
               toast("Имя должно содержать хотя бы 2 символа");
               return;
             }
+            if (username.includes("@")) {
+              toast("В нике нельзя использовать символ @");
+              return;
+            }
+            const email = await usernameAuthEmail(username);
             const { data, error } = await supabaseClient.auth.signUp({
               email,
               password,
-              options: { data: { nickname: name.slice(0, 24) } }
+              options: {
+                data: {
+                  username: username.slice(0, 24),
+                  nickname: username.slice(0, 24)
+                }
+              }
             });
             if (error) throw error;
-            if (data.session) {
-              toast("Профиль создан");
-            } else {
+            if (!data.session) {
               authMode = "login";
               renderProfile();
-              toast("Проверь почту и подтверди регистрацию");
+              toast("Для регистрации без почты администратор должен отключить подтверждение email");
+              return;
             }
+            toast("Профиль создан");
           } else {
+            const email = await authEmailForLogin(identifier);
             const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
             if (error) throw error;
             toast("Вход выполнен");
           }
         } catch (error) {
           console.error("Authentication failed", error);
-          toast(error.message || "Не удалось выполнить вход");
+          toast(error.code === "23505" || error.code === "email_exists" || error.code === "user_already_exists"
+            ? "Этот ник уже занят"
+            : error.message || "Не удалось выполнить вход");
         }
         return;
       }
