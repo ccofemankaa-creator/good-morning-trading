@@ -210,7 +210,7 @@ begin
   values (new.id, left(new_username, 24), left(new_nickname, 24))
   on conflict (id) do nothing;
   insert into public.wallets (user_id, balance)
-  values (new.id, 1000)
+  values (new.id, 500)
   on conflict (user_id) do nothing;
   insert into public.chat_messages (user_id, body)
   values (new.id, 'Привет, трейдер ' || left(new_nickname, 24) || '!')

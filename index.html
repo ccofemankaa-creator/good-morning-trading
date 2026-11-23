@@ -759,6 +759,12 @@
       color: #fff;
       font-size: 12px;
     }
+    .bonus-card button.secondary {
+      min-height: 38px;
+      margin-top: -6px;
+      background: transparent;
+      color: var(--muted);
+    }
     .profile-account {
       display: flex;
       align-items: center;
@@ -1014,6 +1020,18 @@
       <button class="nav" data-page="portfolio"><span>▥</span>Портфель</button>
       <button class="nav" data-page="profile"><span>◎</span>Профиль</button>
     </nav>
+    <div class="app-modal" id="joinGameModal" hidden>
+      <section class="bonus-card">
+        <div class="bonus-card-main">
+          <div class="bonus-icon">GT</div>
+          <h2>Вступай в GoodTrader</h2>
+          <p>Зарегистрируйся только по нику и паролю: получи 500$ на стартовый счёт и общайся с другими трейдерами в общем чате.</p>
+          <div class="bonus-amount">500$ стартовых</div>
+        </div>
+        <button type="button" data-open-registration>Создать профиль</button>
+        <button type="button" class="secondary" data-close-join>Позже</button>
+      </section>
+    </div>
     <div class="app-modal" id="welcomeBonusModal" hidden>
       <section class="bonus-card">
         <div class="bonus-card-main">
@@ -1701,10 +1719,7 @@
     }
     function showCloudError(error) {
       console.error("Supabase request failed", error);
-      if (!cloudErrorShown) {
-        cloudErrorShown = true;
-        toast("Не удалось подключиться к общей игре. Проверь настройки Supabase.");
-      }
+      if (!cloudErrorShown) cloudErrorShown = true;
     }
     async function refreshCloudAccount() {
       if (!authUser) return;
@@ -2467,6 +2482,21 @@
       renderProfile();
     });
     document.addEventListener("click", event => {
+      if (event.target.closest("[data-close-join]")) {
+        document.querySelector("#joinGameModal").hidden = true;
+        saveLocalJSON("goodtrader.joinPromptSeen", true);
+        return;
+      }
+      if (event.target.closest("[data-open-registration]")) {
+        document.querySelector("#joinGameModal").hidden = true;
+        saveLocalJSON("goodtrader.joinPromptSeen", true);
+        document.querySelectorAll(".nav").forEach(item => item.classList.remove("active"));
+        document.querySelector('[data-page="profile"]').classList.add("active");
+        authMode = "register";
+        renderProfile();
+        showPage("profile");
+        return;
+      }
       if (event.target.closest("[data-close-welcome]")) {
         document.querySelector("#welcomeBonusModal").hidden = true;
         return;
@@ -2521,6 +2551,10 @@
     render();
     document.querySelector("#newsSchedule").textContent = "Общие игровые новости и котировки для всех игроков";
     void startCloud();
+    setTimeout(() => {
+      if (authUser || loadLocalJSON("goodtrader.joinPromptSeen", false)) return;
+      document.querySelector("#joinGameModal").hidden = false;
+    }, 20000);
     setInterval(tickMarket, 1000);
   </script>
 </body>

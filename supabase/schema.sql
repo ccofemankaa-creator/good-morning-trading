@@ -297,7 +297,7 @@ begin
   on conflict (id) do nothing;
 
   insert into public.wallets (user_id, balance)
-  values (new.id, 1000)
+  values (new.id, 500)
   on conflict (user_id) do nothing;
 
   insert into public.chat_messages (user_id, body)
