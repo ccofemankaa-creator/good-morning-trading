@@ -589,6 +589,29 @@
     .admin-user button, .chat-message-delete { border: 0; border-radius: 6px; background: #352020; color: #ff9a94; font-size: 9px; }
     .admin-user button { min-height: 28px; padding: 0 8px; }
     .admin-user button[data-admin-reset-user] { background: #202a39; color: #9dc1ff; }
+    .admin-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .admin-stat {
+      min-height: 58px;
+      display: grid;
+      align-content: center;
+      gap: 4px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0d1016;
+    }
+    .admin-stat strong { color: var(--text); font-size: 15px; }
+    .admin-stat span { color: var(--muted); font-size: 8px; line-height: 1.35; }
+    .admin-user-meta {
+      display: grid;
+      gap: 3px;
+      margin-top: 5px;
+    }
+    .admin-user-meta small { display: block; }
     .telegram-contact { display: grid; gap: 8px; padding: 12px 10px; border-top: 1px solid var(--line); }
     .telegram-contact strong { font-size: 11px; }
     .telegram-contact span { color: var(--muted); font-size: 10px; }
@@ -1149,6 +1172,7 @@
     let cloudSyncInProgress = false;
     let toastTimer;
     let chatRealtimeChannel = null;
+    let lastAdminReportText = "";
 
     const NEWS_INTERVAL_MS = 60 * 60 * 1000;
     const NEWS_HISTORY_LIMIT = 100;
@@ -1647,6 +1671,7 @@
         ? '<section class="profile-admin"><strong>Администрирование</strong>' +
             '<small>Текущие пароли не видны. Можно задать новый пароль, просматривать профили и удалять аккаунты.</small>' +
             '<button class="profile-submit" type="button" data-refresh-admin>Обновить список</button>' +
+            '<button class="profile-submit" type="button" data-admin-report>Сформировать статистику</button>' +
             '<div id="adminUsers"><div class="empty-news">Загружаю пользователей…</div></div></section>'
         : '';
       const accountMarkup = authUser
@@ -1692,22 +1717,69 @@
       if (!isAdmin) return;
       const container = document.querySelector("#adminUsers");
       if (!container) return;
-      const { data, error } = await supabaseClient.from("profiles")
-        .select("id, username, nickname, created_at")
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (error) {
-        console.error("Could not load admin user list", error);
+      const [profilesResult, walletsResult, positionsResult, chatResult, commentsResult] = await Promise.all([
+        supabaseClient.from("profiles").select("id, username, nickname, created_at").order("created_at", { ascending: false }).limit(200),
+        supabaseClient.from("wallets").select("user_id, balance"),
+        supabaseClient.from("positions").select("user_id, opened_at"),
+        supabaseClient.from("chat_messages").select("user_id, created_at").order("created_at", { ascending: false }).limit(1000),
+        supabaseClient.from("news_comments").select("user_id, created_at").order("created_at", { ascending: false }).limit(1000)
+      ]);
+      if (profilesResult.error || walletsResult.error || positionsResult.error || chatResult.error || commentsResult.error) {
+        console.error("Could not load admin statistics", profilesResult.error || walletsResult.error || positionsResult.error || chatResult.error || commentsResult.error);
         container.innerHTML = '<div class="empty-news">Не удалось загрузить список пользователей</div>';
         return;
       }
+      const data = profilesResult.data;
       if (!data.length) {
         container.innerHTML = '<div class="empty-news">Пользователей пока нет</div>';
         return;
       }
-      container.innerHTML = data.map(user =>
+      const walletByUser = Object.fromEntries((walletsResult.data || []).map(item => [item.user_id, Number(item.balance)]));
+      const positionCountByUser = (positionsResult.data || []).reduce((counts, item) => {
+        counts[item.user_id] = (counts[item.user_id] || 0) + 1;
+        return counts;
+      }, {});
+      const chatCountByUser = (chatResult.data || []).reduce((counts, item) => {
+        counts[item.user_id] = (counts[item.user_id] || 0) + 1;
+        return counts;
+      }, {});
+      const now = Date.now();
+      const activeSince = now - 24 * 60 * 60 * 1000;
+      const activeUsers = new Set([
+        ...(chatResult.data || []).filter(item => Date.parse(item.created_at) >= activeSince).map(item => item.user_id),
+        ...(commentsResult.data || []).filter(item => Date.parse(item.created_at) >= activeSince).map(item => item.user_id),
+        ...(positionsResult.data || []).filter(item => Date.parse(item.opened_at) >= activeSince).map(item => item.user_id)
+      ]);
+      const totalBalance = data.reduce((sum, user) => sum + (walletByUser[user.id] || 0), 0);
+      const openedPositions = (positionsResult.data || []).length;
+      const chatMessages = (chatResult.data || []).length;
+      const totalStatsMarkup = '<div class="admin-stats">' +
+        '<div class="admin-stat"><strong>' + data.length + '</strong><span>Всего игроков</span></div>' +
+        '<div class="admin-stat"><strong>' + activeUsers.size + '</strong><span>Активны за сутки</span></div>' +
+        '<div class="admin-stat"><strong>' + money(totalBalance) + '</strong><span>Общий баланс</span></div>' +
+        '<div class="admin-stat"><strong>' + openedPositions + '</strong><span>Открытых сделок</span></div>' +
+        '</div><small>Сообщений в чате загружено: ' + chatMessages + '</small>';
+      lastAdminReportText =
+        "GoodTrader · статистика\\n" +
+        "Всего игроков: " + data.length + "\\n" +
+        "Активны за сутки: " + activeUsers.size + "\\n" +
+        "Общий баланс: " + money(totalBalance) + "\\n" +
+        "Открытых сделок: " + openedPositions + "\\n" +
+        "Сообщений в чате загружено: " + chatMessages + "\\n\\n" +
+        data.map(user =>
+          escapeHTML(user.nickname) + ": баланс " + money(walletByUser[user.id] || 0) +
+          ", сделок " + (positionCountByUser[user.id] || 0) +
+          ", сообщений " + (chatCountByUser[user.id] || 0)
+        ).join("\\n");
+      container.innerHTML = totalStatsMarkup + data.map(user =>
         '<div class="admin-user"><span><strong>' + escapeHTML(user.nickname) +
-          '</strong><small>Вход: ' + escapeHTML(user.username) + '</small></span>' +
+          '</strong><small>Ник: ' + escapeHTML(user.username) + '</small>' +
+          '<span class="admin-user-meta"><small>Баланс: ' + money(walletByUser[user.id] || 0) +
+            ' · Сделки: ' + (positionCountByUser[user.id] || 0) +
+            ' · Чат: ' + (chatCountByUser[user.id] || 0) + '</small>' +
+            '<small>Регистрация: ' + new Date(user.created_at).toLocaleString("ru-RU", {
+              day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit"
+            }) + '</small></span></span>' +
           (user.id === authUser.id
             ? '<small>Это вы</small>'
             : '<div class="admin-user-actions">' +
@@ -2360,6 +2432,19 @@
       }
       if (event.target.closest("[data-refresh-admin]")) {
         await refreshAdminUsers();
+        return;
+      }
+      if (event.target.closest("[data-admin-report]")) {
+        if (!lastAdminReportText) {
+          toast("Сначала обновите статистику");
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(lastAdminReportText);
+          toast("Статистика скопирована");
+        } catch {
+          window.prompt("Статистика GoodTrader", lastAdminReportText);
+        }
         return;
       }
       const deleteUserButton = event.target.closest("[data-admin-delete-user]");
