@@ -160,6 +160,14 @@ create table if not exists public.user_task_rewards (
   primary key (user_id, task)
 );
 
+create table if not exists public.referrals (
+  referrer_id uuid not null references auth.users (id) on delete cascade,
+  referred_id uuid primary key references auth.users (id) on delete cascade,
+  reward numeric(14, 2) not null default 1000 check (reward > 0),
+  created_at timestamptz not null default now(),
+  unique (referrer_id, referred_id)
+);
+
 create unique index if not exists news_templates_unique_idx
   on public.news_templates (ticker, direction, text);
 
@@ -238,6 +246,7 @@ alter table public.chat_messages enable row level security;
 alter table public.news_comments enable row level security;
 alter table public.balance_adjustments enable row level security;
 alter table public.user_task_rewards enable row level security;
+alter table public.referrals enable row level security;
 
 create or replace function public.is_admin()
 returns boolean
@@ -290,6 +299,7 @@ as $$
 declare
   new_username text;
   new_nickname text;
+  referral_id uuid;
 begin
   new_username := coalesce(
     nullif(btrim(new.raw_user_meta_data ->> 'username'), ''),
@@ -317,6 +327,23 @@ begin
   insert into public.chat_messages (user_id, body)
   values (new.id, 'Привет, трейдер ' || left(new_nickname, 24) || '!')
   on conflict do nothing;
+
+  begin
+    referral_id := nullif(btrim(new.raw_user_meta_data ->> 'referral_id'), '')::uuid;
+  exception when invalid_text_representation then
+    referral_id := null;
+  end;
+  if referral_id is not null and referral_id <> new.id
+     and exists (select 1 from public.wallets where user_id = referral_id) then
+    insert into public.referrals (referrer_id, referred_id)
+    values (referral_id, new.id)
+    on conflict (referred_id) do nothing;
+    if found then
+      update public.wallets
+      set balance = balance + 1000
+      where user_id = referral_id;
+    end if;
+  end if;
 
   return new;
 end;
@@ -639,6 +666,13 @@ using (user_id = auth.uid());
 
 grant select on public.user_task_rewards to authenticated;
 
+drop policy if exists referrals_read_self on public.referrals;
+create policy referrals_read_self on public.referrals
+for select to authenticated
+using (referrer_id = auth.uid() or referred_id = auth.uid());
+
+grant select on public.referrals to authenticated;
+
 create or replace function public.claim_task_reward(p_task text, p_reward numeric)
 returns numeric
 language plpgsql
@@ -651,25 +685,29 @@ begin
   if auth.uid() is null then
     raise exception 'Authentication required';
   end if;
-  if p_task is null or char_length(btrim(p_task)) < 2 then
-    raise exception 'Invalid task';
-  end if;
-  if p_task = 'install_app' and p_reward <> 1000 then
-    raise exception 'Invalid reward';
-  end if;
-  if p_task <> 'install_app' then
+  if p_task = 'install_app' then
+    if p_reward <> 500 then raise exception 'Invalid reward'; end if;
+    if exists (
+      select 1 from public.user_task_rewards
+      where user_id = auth.uid() and task = p_task
+    ) then raise exception 'Reward already claimed'; end if;
+    insert into public.user_task_rewards (user_id, task, reward)
+    values (auth.uid(), p_task, p_reward);
+  elsif p_task = 'hourly' then
+    if p_reward <> 100 then raise exception 'Invalid reward'; end if;
+    if exists (
+      select 1 from public.user_task_rewards
+      where user_id = auth.uid() and task = p_task
+        and claimed_at > now() - interval '1 hour'
+    ) then raise exception 'Hourly reward not available yet'; end if;
+    insert into public.user_task_rewards (user_id, task, reward)
+    values (auth.uid(), p_task, p_reward)
+    on conflict (user_id, task) do update
+    set reward = public.user_task_rewards.reward + excluded.reward,
+        claimed_at = now();
+  else
     raise exception 'Unknown task';
   end if;
-  if exists (
-    select 1
-    from public.user_task_rewards
-    where user_id = auth.uid() and task = p_task
-  ) then
-    raise exception 'Reward already claimed';
-  end if;
-
-  insert into public.user_task_rewards (user_id, task, reward)
-  values (auth.uid(), p_task, p_reward);
 
   update public.wallets
   set balance = balance + p_reward

@@ -45,6 +45,20 @@ create table if not exists public.user_task_rewards (
 
 alter table public.user_task_rewards enable row level security;
 
+create table if not exists public.referrals (
+  referrer_id uuid not null references auth.users (id) on delete cascade,
+  referred_id uuid primary key references auth.users (id) on delete cascade,
+  reward numeric(14, 2) not null default 1000 check (reward > 0),
+  created_at timestamptz not null default now(),
+  unique (referrer_id, referred_id)
+);
+alter table public.referrals enable row level security;
+drop policy if exists referrals_read_self on public.referrals;
+create policy referrals_read_self on public.referrals
+for select to authenticated
+using (referrer_id = auth.uid() or referred_id = auth.uid());
+grant select on public.referrals to authenticated;
+
 drop policy if exists user_task_rewards_read_self on public.user_task_rewards;
 create policy user_task_rewards_read_self on public.user_task_rewards
 for select to authenticated

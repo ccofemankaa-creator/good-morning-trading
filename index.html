@@ -1072,7 +1072,7 @@
           <div class="bonus-icon">⌂</div>
           <h2>Установи приложение</h2>
           <p>На iPhone: открой меню браузера и выбери «На экран Домой». На Android: нажми «Добавить на главный экран».</p>
-          <div class="bonus-amount">+1000$</div>
+          <div class="bonus-amount">+500$</div>
         </div>
         <button type="button" data-claim-install>Установил и получил бонус</button>
       </section>
@@ -1189,6 +1189,7 @@
     let toastTimer;
     let chatRealtimeChannel = null;
     let lastAdminReportText = "";
+    let pendingReferralId = null;
 
     const NEWS_INTERVAL_MS = 60 * 60 * 1000;
     const NEWS_HISTORY_LIMIT = 100;
@@ -1695,8 +1696,14 @@
             escapeHTML(profile ? profile.username : "") + '</strong></div>' +
           '<button class="profile-logout" type="button" data-sign-out>Выйти</button></div>' +
           '<div class="task-strip"><div><strong>Установи GoodTrader на главный экран</strong>' +
-            '<span>Задание · награда 1000$</span></div>' +
+            '<span>Задание · награда 500$</span></div>' +
             '<button type="button" data-open-install-task>Открыть</button></div>' +
+          '<div class="task-strip"><div><strong>Ежечасный бонус</strong>' +
+            '<span>Доступен один раз в час · награда 100$</span></div>' +
+            '<button type="button" data-claim-hourly>Получить</button></div>' +
+          '<div class="task-strip"><div><strong>Пригласить друга</strong>' +
+            '<span>Награда: 1000$ после регистрации друга</span></div>' +
+            '<button type="button" data-copy-referral>Ссылка друга</button></div>' +
           '<div class="profile-info">' +
             '<div class="profile-info-card"><strong>Связь с администратором</strong>' +
               '<a href="' + TELEGRAM_URL + '" target="_blank" rel="noopener noreferrer">Написать в Telegram · @goodxzxz</a></div>' +
@@ -1979,6 +1986,13 @@
         stocks.forEach(stock => { stock.price = stock.basePrice; });
         renderProfile();
         render();
+        const referralParam = new URLSearchParams(window.location.search).get("ref");
+        if (referralParam) {
+          pendingReferralId = referralParam.slice(0, 36);
+          saveLocalJSON("goodtrader.referrer", pendingReferralId);
+        } else {
+          pendingReferralId = loadLocalJSON("goodtrader.referrer", null);
+        }
         await syncCloudMarket();
         return;
       }
@@ -2446,6 +2460,32 @@
         document.querySelector("#installTaskModal").hidden = false;
         return;
       }
+      if (event.target.closest("[data-copy-referral]")) {
+        const referralLink = window.location.origin + window.location.pathname + "?ref=" + encodeURIComponent(authUser.id);
+        try {
+          await navigator.clipboard.writeText(referralLink);
+          toast("Реферальная ссылка скопирована");
+        } catch {
+          window.prompt("Твоя реферальная ссылка", referralLink);
+        }
+        return;
+      }
+      if (event.target.closest("[data-claim-hourly]")) {
+        const { error } = await supabaseClient.rpc("claim_task_reward", {
+          p_task: "hourly",
+          p_reward: 100
+        });
+        if (error) {
+          toast(error.message === "Hourly reward not available yet"
+            ? "Бонус будет доступен через час"
+            : error.message || "Не удалось получить бонус");
+          return;
+        }
+        await refreshCloudAccount();
+        toast("Бонус 100$ получен");
+        render();
+        return;
+      }
       if (event.target.closest("[data-refresh-admin]")) {
         await refreshAdminUsers();
         return;
@@ -2529,7 +2569,8 @@
               options: {
                 data: {
                   username: username.slice(0, 24),
-                  nickname: username.slice(0, 24)
+                  nickname: username.slice(0, 24),
+                  referral_id: pendingReferralId
                 }
               }
             });
@@ -2616,7 +2657,7 @@
           }
           const { error } = await supabaseClient.rpc("claim_task_reward", {
             p_task: "install_app",
-            p_reward: 1000
+            p_reward: 500
           });
           if (error) {
             toast(error.message || "Не удалось получить бонус");
@@ -2624,7 +2665,7 @@
           }
           saveLocalJSON(key, true);
           await refreshCloudAccount();
-          toast("Бонус 1000$ за установку получен");
+          toast("Бонус 500$ за установку получен");
           render();
         })();
         return;
