@@ -224,6 +224,12 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_user();
 
+insert into public.market_stocks (ticker, english_name, name, price, base_price)
+values
+  ('FYF', 'fyfik', 'Файфик', 120, 120),
+  ('KAT', 'Kate', 'Kate', 110, 110)
+on conflict (ticker) do nothing;
+
 delete from public.news_templates;
 
 insert into public.news_templates (ticker, direction, text)
@@ -251,7 +257,19 @@ values
   ('CVK', 'up', 'Civic завёлся с первого раза — рынок назвал это чудом'),
   ('CVK', 'down', 'Робот-парковщик припарковался лучше человека — CVK задумался'),
   ('CVK', 'down', 'Навигатор предложил объезд на 400 километров — CVK просел'),
-  ('CVK', 'down', 'Все искали ключи от Civic одновременно — инвесторы занервничали')
+  ('CVK', 'down', 'Все искали ключи от Civic одновременно — инвесторы занервничали'),
+  ('FYF', 'up', 'Популярный стрим поднял интерес к fyfik'),
+  ('FYF', 'up', 'Российские стримеры заметили FYF — акции растут'),
+  ('FYF', 'up', 'Поддержка Kuertov укрепила котировки FYF'),
+  ('FYF', 'down', 'Активность российских стримов снизилась — FYF просел'),
+  ('FYF', 'down', 'Громкий стрим закончился, интерес к fyfik ослаб'),
+  ('FYF', 'down', 'Стриминговое сообщество ушло в боковик — FYF снизился'),
+  ('KAT', 'up', 'Мандарины подешевели — Kate получил поддержку'),
+  ('KAT', 'up', 'Погода в Москве улучшилась — KAT растёт'),
+  ('KAT', 'up', 'Приближение учебной сессии увеличило интерес к Kate'),
+  ('KAT', 'down', 'Цена мандаринов выросла — Kate просел'),
+  ('KAT', 'down', 'Погода в Москве ухудшилась — котировки KAT снизились'),
+  ('KAT', 'down', 'Учебная сессия подошла ближе — инвесторы стали осторожнее')
 on conflict do nothing;
 
 create or replace function public.advance_market_internal()
