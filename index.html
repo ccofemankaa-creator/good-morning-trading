@@ -642,6 +642,11 @@
       background: #0d1016;
     }
     .chat-message.mine { border-color: #385991; }
+    .chat-message.welcome {
+      border-color: #36c793;
+      background: linear-gradient(135deg, #10251b, #0d1016);
+      box-shadow: 0 0 14px rgba(54,199,147,.08);
+    }
     .chat-message-head { display: flex; justify-content: space-between; gap: 8px; }
     .chat-message-head strong { font-size: 10px; }
     .chat-message-head time { color: var(--muted); font-size: 8px; }
@@ -1043,6 +1048,17 @@
       <button class="nav" data-page="portfolio"><span>▥</span>Портфель</button>
       <button class="nav" data-page="profile"><span>◎</span>Профиль</button>
     </nav>
+    <div class="app-modal" id="profileGiftModal" hidden>
+      <section class="bonus-card">
+        <div class="bonus-card-main">
+          <div class="bonus-icon">♥</div>
+          <h2 id="profileGiftTitle">Спасибо за поддержку</h2>
+          <p id="profileGiftMessage">Добро пожаловать в GoodTrader</p>
+          <div class="bonus-amount" id="profileGiftAmount">+2000$</div>
+        </div>
+        <button type="button" data-close-profile-gift>Получить подарок</button>
+      </section>
+    </div>
     <div class="app-modal" id="joinGameModal" hidden>
       <section class="bonus-card">
         <div class="bonus-card-main">
@@ -1905,7 +1921,9 @@
         return;
       }
       feed.innerHTML = chatMessages.map(message =>
-        '<article class="chat-message ' + (authUser && message.userId === authUser.id ? "mine" : "") + '">' +
+        '<article class="chat-message ' +
+          (authUser && message.userId === authUser.id ? "mine " : "") +
+          (message.text.startsWith("Привет, трейдер ") ? "welcome " : "") + '">' +
           '<div class="chat-message-head"><strong>' + escapeHTML(message.name) + '</strong>' +
           '<time>' + new Date(message.createdAt).toLocaleTimeString("ru-RU", {
             hour: "2-digit",
@@ -1973,6 +1991,23 @@
         cloudSyncInProgress = false;
       }
     }
+    async function showProfileGift() {
+      if (!authUser) return;
+      const { data, error } = await supabaseClient
+        .from("profile_gifts")
+        .select("amount, message, shown_at")
+        .eq("user_id", authUser.id)
+        .maybeSingle();
+      if (error) {
+        console.error("Could not load profile gift", error);
+        return;
+      }
+      if (!data || data.shown_at) return;
+      document.querySelector("#profileGiftAmount").textContent =
+        "+" + Number(data.amount).toLocaleString("ru-RU") + "$";
+      document.querySelector("#profileGiftMessage").textContent = data.message;
+      document.querySelector("#profileGiftModal").hidden = false;
+    }
     async function applyAuthSession(session) {
       authUser = session ? session.user : null;
       if (!authUser) {
@@ -1998,6 +2033,7 @@
       }
       try {
         await refreshCloudAccount();
+        await showProfileGift();
         await syncCloudMarket();
         renderProfile();
         render();
@@ -2624,6 +2660,16 @@
       renderProfile();
     });
     document.addEventListener("click", event => {
+      if (event.target.closest("[data-close-profile-gift]")) {
+        document.querySelector("#profileGiftModal").hidden = true;
+        if (authUser) {
+          void supabaseClient
+            .from("profile_gifts")
+            .update({ shown_at: new Date().toISOString() })
+            .eq("user_id", authUser.id);
+        }
+        return;
+      }
       if (event.target.closest("[data-close-join]")) {
         document.querySelector("#joinGameModal").hidden = true;
         saveLocalJSON("goodtrader.joinPromptSeen", true);
@@ -2696,7 +2742,7 @@
     setTimeout(() => {
       if (authUser || loadLocalJSON("goodtrader.joinPromptSeen", false)) return;
       document.querySelector("#joinGameModal").hidden = false;
-    }, 20000);
+    }, 8000);
     setInterval(tickMarket, 1000);
   </script>
 </body>

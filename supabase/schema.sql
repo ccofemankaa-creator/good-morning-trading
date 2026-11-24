@@ -152,6 +152,35 @@ create table if not exists public.balance_adjustments (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.trade_history (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  ticker text not null,
+  side text not null check (side in ('long', 'short')),
+  qty integer not null check (qty > 0),
+  entry_price numeric(14, 2) not null,
+  exit_price numeric(14, 2) not null,
+  profit_loss numeric(14, 2) not null,
+  closed_at timestamptz not null default now()
+);
+
+create table if not exists public.profile_gifts (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  amount numeric(14, 2) not null check (amount > 0),
+  message text not null,
+  received_at timestamptz not null default now(),
+  shown_at timestamptz
+);
+
+create table if not exists public.daily_trader_winners (
+  winner_date date primary key,
+  winner_id uuid not null references auth.users (id),
+  nickname text not null,
+  score numeric(14, 2) not null,
+  reward numeric(14, 2) not null default 500,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.user_task_rewards (
   user_id uuid not null references auth.users (id) on delete cascade,
   task text not null,
@@ -245,6 +274,9 @@ alter table public.positions enable row level security;
 alter table public.chat_messages enable row level security;
 alter table public.news_comments enable row level security;
 alter table public.balance_adjustments enable row level security;
+alter table public.trade_history enable row level security;
+alter table public.daily_trader_winners enable row level security;
+alter table public.profile_gifts enable row level security;
 alter table public.user_task_rewards enable row level security;
 alter table public.referrals enable row level security;
 
@@ -408,6 +440,27 @@ with check (user_id = auth.uid());
 drop policy if exists balance_adjustments_read_admin on public.balance_adjustments;
 create policy balance_adjustments_read_admin on public.balance_adjustments
 for select to authenticated using (public.is_admin());
+
+drop policy if exists trade_history_read_admin on public.trade_history;
+create policy trade_history_read_admin on public.trade_history
+for select to authenticated using (public.is_admin());
+
+drop policy if exists daily_winners_read on public.daily_trader_winners;
+create policy daily_winners_read on public.daily_trader_winners
+for select to anon, authenticated using (true);
+
+drop policy if exists profile_gifts_read_self on public.profile_gifts;
+create policy profile_gifts_read_self on public.profile_gifts
+for select to authenticated using (user_id = auth.uid());
+
+drop policy if exists profile_gifts_update_self on public.profile_gifts;
+create policy profile_gifts_update_self on public.profile_gifts
+for update to authenticated
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+grant select on public.trade_history, public.daily_trader_winners to authenticated;
+grant select, update (shown_at) on public.profile_gifts to authenticated;
 
 grant select on public.profiles, public.wallets, public.market_stocks,
   public.market_news, public.positions, public.chat_messages, public.news_comments to authenticated;
@@ -724,6 +777,89 @@ $$;
 revoke all on function public.claim_task_reward(text, numeric) from public, anon;
 grant execute on function public.claim_task_reward(text, numeric) to authenticated;
 
+create or replace function public.publish_daily_trader_winner()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_day date := (now() at time zone 'Europe/Moscow')::date;
+  v_start timestamptz := ((v_day::text || ' 00:00:00')::timestamp at time zone 'Europe/Moscow');
+  v_end timestamptz := (((v_day + 1)::text || ' 00:00:00')::timestamp at time zone 'Europe/Moscow');
+  winner record;
+  ranking_row record;
+  admin_id uuid;
+  ranking text;
+  rank_index integer := 0;
+begin
+  if exists (select 1 from public.daily_trader_winners where winner_date = v_day) then
+    return;
+  end if;
+
+  select th.user_id, p.nickname, coalesce(sum(th.profit_loss), 0) as score, w.balance
+  into winner
+  from public.trade_history th
+  join public.profiles p on p.id = th.user_id
+  join public.wallets w on w.user_id = th.user_id
+  where th.closed_at >= v_start and th.closed_at < v_end
+  group by th.user_id, p.nickname, w.balance
+  order by score desc, w.balance desc
+  limit 1;
+
+  if winner.user_id is null then
+    return;
+  end if;
+
+  insert into public.daily_trader_winners (
+    winner_date, winner_id, nickname, score, reward
+  )
+  values (v_day, winner.user_id, winner.nickname, winner.score, 500)
+  on conflict (winner_date) do nothing;
+
+  if found then
+    update public.wallets
+    set balance = balance + 500
+    where user_id = winner.user_id;
+
+    select user_id into admin_id
+    from public.admin_users
+    order by created_at
+    limit 1;
+
+    ranking := '';
+    for ranking_row in
+      select th.user_id, p.nickname, coalesce(sum(th.profit_loss), 0) as score, w.balance
+      from public.trade_history th
+      join public.profiles p on p.id = th.user_id
+      join public.wallets w on w.user_id = th.user_id
+      where th.closed_at >= v_start and th.closed_at < v_end
+      group by th.user_id, p.nickname, w.balance
+      order by score desc, w.balance desc
+      limit 3
+    loop
+      rank_index := rank_index + 1;
+      ranking := ranking ||
+        case when rank_index > 1 then ' · ' else '' end ||
+        rank_index::text || '. ' || ranking_row.nickname ||
+        ' +' || round(ranking_row.score, 2)::text || '$';
+    end loop;
+
+    if admin_id is not null then
+      insert into public.chat_messages (user_id, body)
+      values (
+        admin_id,
+        left('Лучший трейдер за сегодня: ' || winner.nickname ||
+          '. Прибыль: +' || round(winner.score, 2)::text ||
+          '$. Награда: 500$. Рейтинг: ' || ranking, 240)
+      );
+    end if;
+  end if;
+end;
+$$;
+
+revoke all on function public.publish_daily_trader_winner() from public, anon, authenticated;
+
 create extension if not exists pg_cron with schema pg_catalog;
 
 do $$
@@ -733,6 +869,13 @@ begin
       'market-advance',
       '* * * * *',
       'select public.advance_market()'
+    );
+  end if;
+  if not exists (select 1 from cron.job where jobname = 'daily-trader-winner') then
+    perform cron.schedule(
+      'daily-trader-winner',
+      '0 18 * * *',
+      'select public.publish_daily_trader_winner()'
     );
   end if;
 end;
@@ -851,6 +994,19 @@ begin
   set balance = balance + credit
   where user_id = auth.uid()
   returning balance into current_balance;
+
+  insert into public.trade_history (
+    user_id, ticker, side, qty, entry_price, exit_price, profit_loss
+  )
+  values (
+    auth.uid(),
+    current_position.ticker,
+    current_position.side,
+    current_position.qty,
+    current_position.entry_price,
+    current_price,
+    profit_loss
+  );
 
   delete from public.positions where id = current_position.id;
 

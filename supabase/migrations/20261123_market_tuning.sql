@@ -45,6 +45,24 @@ create table if not exists public.user_task_rewards (
 
 alter table public.user_task_rewards enable row level security;
 
+create table if not exists public.profile_gifts (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  amount numeric(14, 2) not null check (amount > 0),
+  message text not null,
+  received_at timestamptz not null default now(),
+  shown_at timestamptz
+);
+alter table public.profile_gifts enable row level security;
+drop policy if exists profile_gifts_read_self on public.profile_gifts;
+create policy profile_gifts_read_self on public.profile_gifts
+for select to authenticated using (user_id = auth.uid());
+drop policy if exists profile_gifts_update_self on public.profile_gifts;
+create policy profile_gifts_update_self on public.profile_gifts
+for update to authenticated
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+grant select, update (shown_at) on public.profile_gifts to authenticated;
+
 create table if not exists public.referrals (
   referrer_id uuid not null references auth.users (id) on delete cascade,
   referred_id uuid primary key references auth.users (id) on delete cascade,
