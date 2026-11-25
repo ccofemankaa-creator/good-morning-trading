@@ -2148,7 +2148,12 @@
         return;
       }
       if (!data) return;
-      balance = Number(data.balance);
+      const updatedBalance = Number(data.balance);
+      if (data.balance == null || !Number.isFinite(updatedBalance)) {
+        await refreshCloudAccount();
+      } else {
+        balance = updatedBalance;
+      }
       render();
       pendingDailyWelcome = data;
       showPendingDailyWelcome();
