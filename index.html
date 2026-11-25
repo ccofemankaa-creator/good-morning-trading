@@ -1907,6 +1907,10 @@
       })).filter(position => position.stock >= 0);
     }
     async function refreshCloudComments() {
+      if (!authUser) {
+        commentsByNews = {};
+        return;
+      }
       const { data, error } = await supabaseClient
         .from("news_comments")
         .select("id, news_id, body, created_at, user_id")
@@ -2099,10 +2103,12 @@
             })
           };
         });
-        await refreshCloudComments();
-        await refreshCloudChat();
         render();
         if (!document.querySelector("#stockDetailView").hidden) renderStockDetail();
+        await Promise.all([
+          refreshCloudComments().then(renderNews).catch(showCloudError),
+          refreshCloudChat().catch(showCloudError)
+        ]);
       } catch (error) {
         showCloudError(error);
       } finally {

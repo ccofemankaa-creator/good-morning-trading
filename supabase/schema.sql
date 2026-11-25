@@ -514,8 +514,7 @@ grant select on public.profiles, public.wallets, public.market_stocks,
 grant select on public.market_stocks, public.market_news to anon;
 grant select (id, nickname) on public.profiles to anon;
 grant select (id, user_id, body, created_at) on public.chat_messages to anon;
-grant select (id, news_id, body, created_at) on public.news_comments to anon;
-grant select (id, news_id, body, created_at) on public.news_comments to authenticated;
+grant select (id, news_id, body, created_at, user_id) on public.news_comments to anon, authenticated;
 grant select on public.market_stocks, public.market_news to anon;
 grant update (nickname) on public.profiles to authenticated;
 grant insert on public.chat_messages to authenticated;
@@ -932,6 +931,7 @@ declare
   v_now timestamp := now() at time zone 'Europe/Moscow';
   v_day date := v_now::date;
   v_hour integer := extract(hour from v_now)::integer;
+  v_minute integer := extract(minute from v_now)::integer;
   v_nickname text;
   v_greeting text;
   v_claimed_date date;
@@ -968,7 +968,7 @@ begin
   end if;
 
   v_greeting := case
-    when v_hour < 14 then 'Доброе утро'
+    when v_hour < 14 or (v_hour = 14 and v_minute = 0) then 'Доброе утро'
     when v_hour < 17 then 'Добрый день'
     else 'Добрый вечер'
   end;
