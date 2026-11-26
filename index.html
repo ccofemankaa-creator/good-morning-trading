@@ -1508,9 +1508,10 @@
       const grossPnL = roundMoney((position.side === "long"
         ? currentPrice - position.entry
         : position.entry - currentPrice) * position.qty);
-      const openingRate = position.side === "long" ? 0.02 : 0.03;
       const closingRate = position.side === "long" ? 0.03 : 0.02;
-      const openingFee = roundMoney(collateral * openingRate);
+      const openingFee = Number.isFinite(position.openingFee)
+        ? roundMoney(position.openingFee)
+        : 0;
       const closingFee = roundMoney(roundMoney(currentPrice * position.qty) * closingRate);
       return Math.max(
         -collateral - openingFee,
@@ -2023,7 +2024,7 @@
       const [profileResult, walletResult, positionsResult, adminResult] = await Promise.all([
         supabaseClient.from("profiles").select("username, nickname").eq("id", authUser.id).single(),
         supabaseClient.from("wallets").select("balance").eq("user_id", authUser.id).single(),
-        supabaseClient.from("positions").select("id, ticker, side, qty, entry_price").eq("user_id", authUser.id),
+        supabaseClient.from("positions").select("id, ticker, side, qty, entry_price, opening_fee").eq("user_id", authUser.id),
         supabaseClient.from("admin_users").select("user_id").eq("user_id", authUser.id).maybeSingle()
       ]);
       if (profileResult.error) throw profileResult.error;
@@ -2041,7 +2042,8 @@
         stock: stocks.findIndex(stock => stock.ticker === position.ticker),
         side: position.side,
         qty: Number(position.qty),
-        entry: Number(position.entry_price)
+        entry: Number(position.entry_price),
+        openingFee: Number(position.opening_fee)
       })).filter(position => position.stock >= 0);
     }
     async function refreshCloudComments() {

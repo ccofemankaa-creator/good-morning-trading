@@ -167,6 +167,7 @@ create table if not exists public.positions (
   side text not null check (side in ('long', 'short')),
   qty integer not null check (qty > 0 and qty <= 100000),
   entry_price numeric(14, 2) not null check (entry_price > 0),
+  opening_fee numeric(20, 2) not null default 0 check (opening_fee >= 0),
   opened_at timestamptz not null default now()
 );
 
@@ -1423,8 +1424,8 @@ begin
   where user_id = auth.uid()
   returning balance into current_balance;
 
-  insert into public.positions (user_id, ticker, side, qty, entry_price)
-  values (auth.uid(), p_ticker, p_side, p_qty, current_price);
+  insert into public.positions (user_id, ticker, side, qty, entry_price, opening_fee)
+  values (auth.uid(), p_ticker, p_side, p_qty, current_price, commission);
 
   return current_balance;
 end;
@@ -1450,7 +1451,6 @@ declare
   opening_fee numeric(20, 2);
   closing_fee numeric(20, 2);
   exit_notional numeric(20, 2);
-  opening_fee_rate numeric(4, 3);
   closing_fee_rate numeric(4, 3);
 begin
   if auth.uid() is null then
@@ -1487,9 +1487,8 @@ begin
     end) * current_position.qty,
     2
   );
-  opening_fee_rate := case when current_position.side = 'long' then 0.02 else 0.03 end;
   closing_fee_rate := case when current_position.side = 'long' then 0.03 else 0.02 end;
-  opening_fee := round(collateral * opening_fee_rate, 2);
+  opening_fee := current_position.opening_fee;
   exit_notional := round(current_price * current_position.qty, 2);
   closing_fee := round(exit_notional * closing_fee_rate, 2);
   credit := greatest(0, collateral + gross_profit_loss - closing_fee);

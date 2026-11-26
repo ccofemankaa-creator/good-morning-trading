@@ -8,6 +8,10 @@ alter table public.daily_market_targets
   add column if not exists ramp_seconds integer not null default 3600,
   add column if not exists manual_target boolean not null default false;
 
+alter table public.positions
+  add column if not exists opening_fee numeric(20, 2) not null default 0
+    check (opening_fee >= 0);
+
 update public.daily_market_targets targets
 set start_price = stocks.price
 from public.market_stocks stocks
@@ -538,8 +542,8 @@ begin
   where user_id = auth.uid()
   returning balance into current_balance;
 
-  insert into public.positions (user_id, ticker, side, qty, entry_price)
-  values (auth.uid(), p_ticker, p_side, p_qty, current_price);
+  insert into public.positions (user_id, ticker, side, qty, entry_price, opening_fee)
+  values (auth.uid(), p_ticker, p_side, p_qty, current_price, commission);
 
   return current_balance;
 end;
@@ -565,7 +569,6 @@ declare
   opening_fee numeric(20, 2);
   closing_fee numeric(20, 2);
   exit_notional numeric(20, 2);
-  opening_fee_rate numeric(4, 3);
   closing_fee_rate numeric(4, 3);
 begin
   if auth.uid() is null then
@@ -606,9 +609,8 @@ begin
     end) * current_position.qty,
     2
   );
-  opening_fee_rate := case when current_position.side = 'long' then 0.02 else 0.03 end;
   closing_fee_rate := case when current_position.side = 'long' then 0.03 else 0.02 end;
-  opening_fee := round(collateral * opening_fee_rate, 2);
+  opening_fee := current_position.opening_fee;
   exit_notional := round(current_price * current_position.qty, 2);
   closing_fee := round(exit_notional * closing_fee_rate, 2);
   credit := greatest(0, collateral + gross_profit_loss - closing_fee);
