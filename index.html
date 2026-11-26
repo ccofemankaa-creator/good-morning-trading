@@ -582,6 +582,10 @@
     .profile-admin { display: grid; gap: 8px; padding: 12px 10px; border-top: 1px solid var(--line); }
     .profile-admin > strong { font-size: 11px; }
     .profile-admin > small, .admin-user small { color: var(--muted); font-size: 9px; line-height: 1.4; }
+    .market-event-form { display: grid; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+    .market-event-form label { color: var(--muted); font-size: 9px; }
+    .market-event-form select { width: 100%; }
+    .market-event-form textarea.profile-input { height: 64px; padding: 8px; resize: vertical; }
     .admin-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
     .admin-user > span { min-width: 0; overflow-wrap: anywhere; }
     .admin-user strong, .admin-user small { display: block; }
@@ -783,6 +787,8 @@
       backdrop-filter: blur(8px);
     }
     .app-modal[hidden] { display: none; }
+    #profileGiftModal { position: fixed; z-index: 1000; }
+    #hourlyBonusModal { position: fixed; z-index: 1001; }
     .bonus-card {
       width: 100%;
       overflow: hidden;
@@ -943,7 +949,7 @@
       <section class="order-card">
         <div class="order buy">
           <div class="order-top"><strong class="up">КУПИТЬ</strong><span id="buyPrice">$150.00 / шт.</span></div>
-          <div class="order-total"><span>Сумма покупки</span><strong id="buyTotal">$150.00</strong></div>
+          <div class="order-total"><span>Сумма + комиссия 2%</span><strong id="buyTotal">$150.00</strong></div>
           <div class="order-bottom">
             <label class="quantity-field" for="buyQuantity">Количество, шт.
               <input class="qty-input" id="buyQuantity" type="number" min="1" step="1" placeholder="1" inputmode="numeric">
@@ -954,7 +960,7 @@
         </div>
         <div class="order sell">
           <div class="order-top"><strong class="down">ПРОДАТЬ</strong><span id="sellPrice">$150.00 / шт.</span></div>
-          <div class="order-total"><span>Сумма продажи</span><strong id="sellTotal">$150.00</strong></div>
+          <div class="order-total"><span>Сумма + комиссия 3%</span><strong id="sellTotal">$150.00</strong></div>
           <div class="order-bottom">
             <label class="quantity-field" for="sellQuantity">Количество, шт.
               <input class="qty-input" id="sellQuantity" type="number" min="1" step="1" placeholder="1" inputmode="numeric">
@@ -1088,7 +1094,7 @@
           <div class="bonus-icon">♥</div>
           <h2 id="profileGiftTitle">Спасибо за поддержку</h2>
           <p id="profileGiftMessage">Добро пожаловать в GoodTrader</p>
-          <div class="bonus-amount" id="profileGiftAmount">+2000$</div>
+          <div class="bonus-amount" id="profileGiftAmount">+3000$</div>
         </div>
         <button type="button" data-close-profile-gift>Получить подарок</button>
       </section>
@@ -1127,6 +1133,18 @@
         <button type="button" data-close-daily-welcome>Начать торговлю</button>
       </section>
     </div>
+    <div class="app-modal" id="hourlyBonusModal" hidden>
+      <section class="bonus-card">
+        <div class="bonus-card-main">
+          <div class="bonus-icon">GT</div>
+          <h2>Забрать бонус за этот час</h2>
+          <p>Нажмите кнопку, чтобы зачислить бонус на баланс.</p>
+          <div class="bonus-amount">+100$</div>
+        </div>
+        <button type="button" data-confirm-hourly-bonus>Забрать бонус</button>
+        <button type="button" class="secondary" data-close-hourly-bonus>Позже</button>
+      </section>
+    </div>
     <div class="app-modal" id="installTaskModal" hidden>
       <section class="bonus-card">
         <div class="bonus-card-main">
@@ -1149,11 +1167,11 @@
     const stocks = [
       { ticker: "GDM", englishName: "GoodTrader", name: "GoodTrader", price: 150, basePrice: 150, history: [144,146,145,147,146,148,147,149,148,150,149,150],
         searchTerms: ["GoodTrader", "Good Trader"],
-        description: "Мне нечем заняться, поэтому я создал(а) этот проект. Его цена зависит от моего настроения. За новостями можно следить в Telegram-канале.",
-        news: { up: "Настроение автора улучшилось — интерес к GoodTrader вырос", down: "Настроение автора ухудшилось — цена GoodTrader снизилась" },
+        description: "GDM — загадочный персонаж-трейдер GoodTrader. Он живёт ставками на футбол, кофе и непредсказуемые события. Кто стоит за акцией, неизвестно.",
+        news: { up: "Проша снова вырос — аналитики GDM пересматривают прогноз", down: "Барселона проиграла — персонаж GDM пересчитывает кофейный портфель" },
         newsVariants: {
-          up: ["Автор поделился хорошей новостью — акции GDM укрепились", "Позитивное настроение создателя проекта поддержало котировки", "У автора удачный день — интерес к GoodTrader вырос"],
-          down: ["Автору не до проекта — котировки GoodTrader просели", "Настроение создателя ухудшилось, интерес к GDM снизился", "Автор сообщил о плохом дне — цена GoodTrader пошла вниз"]
+          up: ["Барселона выпустила состав — персонаж GDM уже празднует выигрыш, которого ещё нет", "Проша подрос на сантиметр — GDM нашёл новый фундаментальный показатель", "Кофейня открылась рядом — GDM диверсифицировал портфель в американо"],
+          down: ["Барселона не оправдала ожиданий — у GDM финансовое похмелье", "Кофе подорожал — персонаж GDM изучает растворимый рынок", "В Москве резко сменились дождь и снег — прогноз GDM тоже передумал"]
         } },
       { ticker: "NFR", englishName: "Nefor", name: "Нефор", price: 95, basePrice: 95, history: [87,89,88,91,90,92,91,93,92,95,94,95],
         searchTerms: ["Русский рэп", "Russian rap"],
@@ -1179,7 +1197,7 @@
           up: ["Продажи Honda Civic ускорились — интерес к CVK поднялся", "Рост цен на Civic на вторичном рынке поддержал CVK", "Новый спрос на Civic улучшил прогноз для акции"],
           down: ["Продажи Honda Civic замедлились — цена CVK снизилась", "Цены Civic на вторичном рынке просели — CVK под давлением", "Снижение интереса к Civic охладило котировки CVK"]
         } },
-      { ticker: "FYF", englishName: "fyfik", name: "Файфик", price: 120, basePrice: 120, history: [114,115,116,115,117,116,118,117,119,118,119,120],
+      { ticker: "FYF", englishName: "fyfik", name: "Файфик", price: 70, basePrice: 70, history: [66,67,68,67,69,68,70,69,71,70,69,70],
         searchTerms: ["fyfik", "kuertov", "российские стримы"],
         description: "Акция от kuertov. Спасибо ему за поддержку проекта. В этой игре цена FYF зависит от российских стримов и активности стримингового сообщества.",
         news: { up: "Российские стримы поддержали рост fyfik", down: "Активность российских стримов снизилась — fyfik просел" },
@@ -1195,7 +1213,38 @@
           up: ["Мандарины подешевели — Kate получил поддержку", "Погода в Москве улучшилась — KAT растёт", "Приближение учебной сессии увеличило интерес к Kate"],
           down: ["Цена мандаринов выросла — Kate просел", "Погода в Москве ухудшилась — котировки KAT снизились", "Учебная сессия подошла ближе — инвесторы стали осторожнее"]
         } },
+      { ticker: "KRK", englishName: "Krak", name: "Krak", price: 10000000, basePrice: 10000000,
+        history: [9600000,9700000,9850000,9800000,9950000,9900000,10050000,9900000,10100000,9950000,10050000,10000000],
+        searchTerms: ["Krak", "KRK", "CS2", "Counter-Strike"],
+        description: "KRK — игровая акция Krak, зависящая от событий в CS2: турниров, обновлений и интереса игроков. События задаёт администратор; это не реальная рыночная котировка.",
+        adminOnly: true,
+        news: { up: "Событие в CS2 поддержало Krak", down: "Событие в CS2 ударило по Krak" },
+        newsVariants: {
+          up: ["Турнир в CS2 привлёк новую аудиторию к Krak", "Обновление CS2 вызвало ажиотаж вокруг KRK"],
+          down: ["Интерес к CS2 охладел — Krak теряет поддержку", "Неудачный турнирный уикенд испортил настроение KRK"]
+        } },
+      { ticker: "SGM", englishName: "Sigma", name: "Сигма", price: 20000000, basePrice: 20000000,
+        history: [19200000,19400000,19700000,19600000,19900000,19800000,20200000,19800000,20400000,19900000,20100000,20000000],
+        searchTerms: ["Сигма", "Sigma", "SGM", "расставание", "часы"],
+        description: "SGM растёт на расставаниях, мотивационных видео и кредитах на дорогие часы. События публикует администратор; игровой чат автоматически не анализируется.",
+        adminOnly: true,
+        news: { up: "Уверенность мужчин поддержала Сигму", down: "Возвращение к бывшим обвалило Сигму" },
+        newsVariants: {
+          up: ["Фраза «мне никто не нужен» поддержала SGM", "Мотивационное видео собрало миллионы просмотров"],
+          down: ["Возвращение к бывшей охладило рынок Sigma", "Покупатели часов вспомнили про кредит"]
+        } },
+      { ticker: "DOLBAEB", englishName: "DOLBAEB", name: "Долбаёб", price: 60000000, basePrice: 60000000,
+        history: [57600000,58200000,59100000,58800000,59700000,59400000,60600000,59400000,61200000,59700000,60300000,60000000],
+        searchTerms: ["Долбаёб", "DOLBAEB", "стартап", "абсурд"],
+        description: "DOLBAEB растёт на нелепых заявлениях, провалах стартапов и абсурдных новостях. Чем громче нелепость, тем сильнее скачок; события вручную публикует администратор.",
+        adminOnly: true,
+        news: { up: "Абсурдная новость подстегнула DOLBAEB", down: "Рынок пресытился абсурдом — DOLBAEB обвалился" },
+        newsVariants: {
+          up: ["Неудачный стартап стал неожиданным поводом для роста", "Заявление знаменитости заставило аналитиков перепроверить реальность"],
+          down: ["Появился новый рекорд абсурда — прежний герой рынка сдал позиции", "Инвесторы устали удивляться и начали продавать"]
+        } },
     ];
+    const automatedNewsStocks = stocks.filter(stock => !stock.adminOnly);
     function createInitialCandles(stock, now) {
       const count = 12 * 60;
       const firstMinute = Math.floor(now / 60000) * 60000 - (count - 1) * 60000;
@@ -1454,6 +1503,20 @@
     function roundMoney(value) {
       return Math.round((value + Number.EPSILON) * 100) / 100;
     }
+    function netPositionPnL(position, currentPrice) {
+      const collateral = roundMoney(position.entry * position.qty);
+      const grossPnL = roundMoney((position.side === "long"
+        ? currentPrice - position.entry
+        : position.entry - currentPrice) * position.qty);
+      const openingRate = position.side === "long" ? 0.02 : 0.03;
+      const closingRate = position.side === "long" ? 0.03 : 0.02;
+      const openingFee = roundMoney(collateral * openingRate);
+      const closingFee = roundMoney(roundMoney(currentPrice * position.qty) * closingRate);
+      return Math.max(
+        -collateral - openingFee,
+        roundMoney(grossPnL - openingFee - closingFee)
+      );
+    }
     function toast(message) {
       toastEl.textContent = message;
       toastEl.classList.add("show");
@@ -1651,9 +1714,7 @@
       }
       el.innerHTML = positions.map((position, index) => {
         const stock = stocks[position.stock];
-        const pnl = position.side === "long"
-          ? (stock.price - position.entry) * position.qty
-          : (position.entry - stock.price) * position.qty;
+        const pnl = netPositionPnL(position, stock.price);
         return '<div class="position-row">' +
           '<b>' + stock.ticker + ' · ' + (position.side === "long" ? "Лонг" : "Шорт") + '</b>' +
           '<span>' + position.qty + ' шт.</span>' +
@@ -1725,11 +1786,8 @@
       holdingsEl.innerHTML = holdings.map(stockIndex => {
         const stock = stocks[stockIndex];
         const stockPositions = positions.filter(position => position.stock === stockIndex);
-        const pnl = stockPositions.reduce((sum, position) => sum + (
-          position.side === "long"
-            ? stock.price - position.entry
-            : position.entry - stock.price
-        ) * position.qty, 0);
+        const pnl = stockPositions.reduce((sum, position) =>
+          sum + netPositionPnL(position, stock.price), 0);
         return '<button class="portfolio-row ' + (stockIndex === portfolioSelectedStock ? "active" : "") +
           '" data-portfolio-stock="' + stockIndex + '">' +
           '<span><strong>' + escapeHTML(stock.name) + '</strong><small>' + stockPositions.length +
@@ -1753,6 +1811,30 @@
       adminPanel.innerHTML = isAdmin
         ? '<section class="profile-admin"><strong>Администрирование</strong>' +
             '<small>Текущие пароли не видны. Можно задать новый пароль, просматривать профили и удалять аккаунты.</small>' +
+            '<form id="marketEventForm" class="market-event-form">' +
+              '<strong>Новость и движение цены</strong>' +
+              '<label for="marketEventTicker">Акция</label>' +
+              '<select class="profile-input" id="marketEventTicker" name="ticker">' +
+                stocks.map(stock => '<option value="' + escapeHTML(stock.ticker) + '">' +
+                  escapeHTML(stock.name + " · " + stock.ticker) + '</option>').join("") +
+              '</select>' +
+              '<label for="marketEventCategory">Сила события</label>' +
+              '<select class="profile-input" id="marketEventCategory" name="category">' +
+                '<option value="ordinary">Обычная новость · 2–5%</option>' +
+                '<option value="notable">Заметное событие · 6–12%</option>' +
+                '<option value="scandal">Скандал · 15–20%</option>' +
+                '<option value="catastrophe">Катастрофа · всегда +25–35%</option>' +
+                '<option value="black_swan">Чёрный лебедь · 40–60%</option>' +
+              '</select>' +
+              '<label for="marketEventDirection">Направление (для катастрофы всегда рост)</label>' +
+              '<select class="profile-input" id="marketEventDirection" name="direction">' +
+                '<option value="up">Рост</option><option value="down">Падение</option>' +
+              '</select>' +
+              '<label for="marketEventText">Текст новости</label>' +
+              '<textarea class="profile-input" id="marketEventText" name="newsText" maxlength="240" required></textarea>' +
+              '<small>Ликвидация дня: около 00:00 МСК одна случайная акция падает на 50% без предупреждения.</small>' +
+              '<button class="profile-submit" type="submit">Опубликовать событие</button>' +
+            '</form>' +
             '<button class="profile-submit" type="button" data-refresh-admin>Обновить список</button>' +
             '<button class="profile-submit" type="button" data-admin-report>Сформировать статистику</button>' +
             '<div id="adminUsers"><div class="empty-news">Загружаю пользователей…</div></div></section>'
@@ -2220,10 +2302,47 @@
       pendingDailyWelcome = data;
       showPendingDailyWelcome();
     }
+    async function claimHourlyBonus(button) {
+      if (!authUser) {
+        toast("Сначала войди в профиль");
+        return;
+      }
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "Начисляем…";
+      try {
+        const { data, error } = await supabaseClient.rpc("claim_task_reward", {
+          p_task: "hourly",
+          p_reward: 100
+        });
+        if (error) {
+          toast(error.message === "Hourly reward not available yet"
+            ? "Бонус будет доступен через час"
+            : error.message || "Не удалось получить бонус");
+          return;
+        }
+        const updatedBalance = Number(data);
+        if (data == null || !Number.isFinite(updatedBalance)) {
+          await refreshCloudAccount();
+        } else {
+          balance = updatedBalance;
+        }
+        document.querySelector("#hourlyBonusModal").hidden = true;
+        render();
+        toast("Бонус 100$ получен");
+      } catch (error) {
+        console.error("Could not claim hourly bonus", error);
+        toast(error.message || "Не удалось получить бонус");
+      } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
+    }
     function showPendingDailyWelcome() {
       if (!pendingDailyWelcome) return;
       const blockingModalIds = [
-        "profileGiftModal", "welcomeBonusModal", "joinGameModal", "installTaskModal"
+        "profileGiftModal", "welcomeBonusModal", "joinGameModal",
+        "installTaskModal", "hourlyBonusModal"
       ];
       if (blockingModalIds.some(id => !document.querySelector("#" + id).hidden)) return;
       document.querySelector("#dailyWelcomeTitle").textContent = pendingDailyWelcome.title;
@@ -2347,7 +2466,7 @@
       renderChart(document.querySelector("#stockDetailChart"), selected);
     }
     function createWeeklyNewsEvent(scheduledAt, sequence) {
-      const stock = stocks[sequence % stocks.length];
+      const stock = automatedNewsStocks[sequence % automatedNewsStocks.length];
       const magnitude = roundMoney(0.8 + Math.random() * 1.2);
       const rising = stock.ticker === "GDM" ? Math.random() < 0.6 : Math.random() >= 0.5;
       return {
@@ -2361,7 +2480,7 @@
     }
     function isValidWeeklyNewsEvent(event) {
       const stock = event && stocks.find(candidate => candidate.ticker === event.ticker);
-      return stock && typeof event.id === "string" && stockHasNews(stock, event.text) &&
+      return stock && !stock.adminOnly && typeof event.id === "string" && stockHasNews(stock, event.text) &&
         Number.isFinite(event.change) && Math.abs(event.change) >= 0.8 &&
         Math.abs(event.change) <= 2 && Number.isFinite(event.scheduledAt) &&
         Number.isSafeInteger(event.sequence) && event.sequence >= 0;
@@ -2390,7 +2509,7 @@
     function publishMarketNews(event = null) {
       const stock = event
         ? stocks.find(candidate => candidate.ticker === event.ticker)
-        : stocks[Math.floor(Math.random() * stocks.length)];
+        : automatedNewsStocks[Math.floor(Math.random() * automatedNewsStocks.length)];
       if (!stock) throw new Error("Cannot publish a news event for an unknown stock");
       const rising = event ? event.change >= 0 : Math.random() >= 0.5;
       const change = event
@@ -2499,15 +2618,18 @@
       renderChat();
     }
     function updateOrderEstimates(price = roundMoney(stocks[selected].price)) {
-      const maxQuantity = Math.max(0, Math.floor(balance / price));
       [
-        { side: "buy", inputId: "buyQuantity", totalId: "buyTotal", maxId: "buyMaxQuantity" },
-        { side: "sell", inputId: "sellQuantity", totalId: "sellTotal", maxId: "sellMaxQuantity" }
+        { side: "buy", feeRate: 0.02, inputId: "buyQuantity", totalId: "buyTotal", maxId: "buyMaxQuantity" },
+        { side: "sell", feeRate: 0.03, inputId: "sellQuantity", totalId: "sellTotal", maxId: "sellMaxQuantity" }
       ].forEach(order => {
         const input = document.querySelector("#" + order.inputId);
         const quantity = Number(input.value);
         const validQuantity = Number.isSafeInteger(quantity) && quantity > 0;
-        const total = validQuantity ? roundMoney(price * quantity) : null;
+        const maxQuantity = Math.max(0, Math.floor(balance / (price * (1 + order.feeRate))));
+        const notional = validQuantity ? roundMoney(price * quantity) : null;
+        const total = notional === null
+          ? null
+          : roundMoney(notional + roundMoney(notional * order.feeRate));
         const totalElement = document.querySelector("#" + order.totalId);
         const button = document.querySelector('[data-side="' + order.side + '"]');
         input.max = String(maxQuantity);
@@ -2535,9 +2657,8 @@
         const stockIndex = Number(element.dataset.portfolioPnl);
         const stockPositions = positions.filter(position => position.stock === stockIndex);
         const stock = stocks[stockIndex];
-        const pnl = stockPositions.reduce((sum, position) => sum + (
-          position.side === "long" ? stock.price - position.entry : position.entry - stock.price
-        ) * position.qty, 0);
+        const pnl = stockPositions.reduce((sum, position) =>
+          sum + netPositionPnL(position, stock.price), 0);
         element.textContent = (pnl >= 0 ? "+" : "") + money(pnl);
         element.className = "portfolio-pnl " + (pnl >= 0 ? "up" : "down");
       });
@@ -2575,7 +2696,9 @@
       }
       const entry = roundMoney(stock.price);
       const cost = roundMoney(entry * quantity);
-      if (cost > balance) {
+      const commissionRate = side === "buy" ? 0.02 : 0.03;
+      const totalCost = roundMoney(cost + roundMoney(cost * commissionRate));
+      if (totalCost > balance) {
         toast("Недостаточно средств для этой сделки");
         return;
       }
@@ -2589,7 +2712,7 @@
         return;
       }
       await refreshCloudAccount();
-      toast((side === "buy" ? "Лонг " : "Шорт ") + quantity + " акц. " + stock.ticker + " открыт");
+      toast((side === "buy" ? "Лонг " : "Шорт ") + quantity + " акц. " + stock.ticker + " открыт · комиссия учтена");
       render();
     }
     async function closePosition(positionId) {
@@ -2747,19 +2870,11 @@
         return;
       }
       if (event.target.closest("[data-claim-hourly]")) {
-        const { error } = await supabaseClient.rpc("claim_task_reward", {
-          p_task: "hourly",
-          p_reward: 100
-        });
-        if (error) {
-          toast(error.message === "Hourly reward not available yet"
-            ? "Бонус будет доступен через час"
-            : error.message || "Не удалось получить бонус");
+        if (!authUser) {
+          toast("Сначала войди в профиль");
           return;
         }
-        await refreshCloudAccount();
-        toast("Бонус 100$ получен");
-        render();
+        document.querySelector("#hourlyBonusModal").hidden = false;
         return;
       }
       if (event.target.closest("[data-refresh-admin]")) {
@@ -2880,6 +2995,40 @@
         }
         return;
       }
+      if (event.target.id === "marketEventForm") {
+        event.preventDefault();
+        if (!isAdmin) {
+          toast("Требуются права администратора");
+          return;
+        }
+        const formData = new FormData(event.target);
+        const submitButton = event.target.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        try {
+          const { error } = await supabaseClient.rpc("publish_market_event", {
+            p_ticker: String(formData.get("ticker") || ""),
+            p_category: String(formData.get("category") || ""),
+            p_direction: String(formData.get("direction") || ""),
+            p_news_text: String(formData.get("newsText") || "").trim()
+          });
+          if (error) throw error;
+          event.target.reset();
+
+          const { error: advanceError } = await supabaseClient.rpc("advance_market");
+          if (advanceError) {
+            console.error("Market event was queued but could not be applied immediately", advanceError);
+            toast("Событие сохранено, но не применилось сразу; рынок повторит попытку автоматически");
+            return;
+          }
+          toast("Событие опубликовано; движение цены началось");
+        } catch (error) {
+          console.error("Could not publish market event", error);
+          toast(error.message || "Не удалось опубликовать событие");
+        } finally {
+          submitButton.disabled = false;
+        }
+        return;
+      }
       if (event.target.id !== "profileForm") return;
       event.preventDefault();
       const name = String(new FormData(event.target).get("name") || "").trim();
@@ -2901,6 +3050,16 @@
       renderProfile();
     });
     document.addEventListener("click", event => {
+      if (event.target.closest("[data-confirm-hourly-bonus]")) {
+        const button = event.target.closest("[data-confirm-hourly-bonus]");
+        void claimHourlyBonus(button);
+        return;
+      }
+      if (event.target.closest("[data-close-hourly-bonus]")) {
+        document.querySelector("#hourlyBonusModal").hidden = true;
+        showPendingDailyWelcome();
+        return;
+      }
       if (event.target.closest("[data-close-profile-gift]")) {
         document.querySelector("#profileGiftModal").hidden = true;
         showPendingDailyWelcome();
