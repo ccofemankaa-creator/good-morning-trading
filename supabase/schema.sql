@@ -73,6 +73,37 @@ create table if not exists public.market_stocks (
   updated_at timestamptz not null default now()
 );
 
+create or replace function public.keep_market_stock_within_price_band()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  new.price := greatest(
+    greatest(0.01::numeric, new.base_price * 0.55),
+    least(999999999999.99::numeric, new.base_price * 1.45, new.price)
+  );
+  return new;
+end;
+$$;
+
+revoke all on function public.keep_market_stock_within_price_band() from public, anon, authenticated;
+
+drop trigger if exists market_stocks_price_band on public.market_stocks;
+create trigger market_stocks_price_band
+before insert or update of price, base_price on public.market_stocks
+for each row
+execute function public.keep_market_stock_within_price_band();
+
+update public.market_stocks
+set price = greatest(
+      greatest(0.01::numeric, base_price * 0.55),
+      least(999999999999.99::numeric, base_price * 1.45, price)
+    ),
+    updated_at = now()
+where price < greatest(0.01::numeric, base_price * 0.55)
+   or price > least(999999999999.99::numeric, base_price * 1.45);
+
 alter table public.market_stocks
   add column if not exists event_driven boolean not null default false;
 
@@ -989,45 +1020,69 @@ begin
     select
       stock.ticker,
       stock.price as current_price,
-      10 + floor(random() * 36)::integer as change_percent,
+      stock.base_price,
+      greatest(0.01::numeric, stock.base_price * 0.55) as lower_limit,
+      least(999999999999.99::numeric, stock.base_price * 1.45) as upper_limit,
       case
-        when stock.price <= 0.10::numeric / 0.90::numeric then 1
-        when stock.price >= 999999999999.99::numeric / 1.10::numeric then -1
-        when stock.price < coalesce(target.target_price, stock.base_price) then
-          case when random() < 0.60 then 1 else -1 end
-        when stock.price > coalesce(target.target_price, stock.base_price) then
-          case when random() < 0.60 then -1 else 1 end
-        else case when random() < 0.5 then -1 else 1 end
-      end as direction
+        when news.created_at >= v_last_tick and news.change > 0 then 1
+        when news.created_at >= v_last_tick and news.change < 0 then -1
+        when target.target_price > stock.price then 1
+        when target.target_price < stock.price then -1
+        else 0
+      end as signal_direction,
+      case
+        when news.created_at >= v_last_tick then
+          least(45, greatest(1, ceil(abs(news.change))::integer))
+        else 1 + floor(random() * 3)::integer
+      end as change_percent,
+      random() as shuffle
     from public.market_stocks stock
     left join public.daily_market_targets target
       on target.ticker = stock.ticker
       and (target.target_date = v_day or target.manual_target)
       and target.ramp_seconds > 0
+    left join lateral (
+      select item.change, item.created_at
+      from public.market_news item
+      where item.ticker = stock.ticker
+        and item.created_at >= v_last_tick
+      order by item.created_at desc, item.id desc
+      limit 1
+    ) news on true
+  ),
+  balanced_movements as materialized (
+    select
+      movements.*,
+      row_number() over (
+        order by
+          case
+            when movements.current_price <= movements.lower_limit then 0
+            when movements.current_price >= movements.upper_limit then 4
+            when movements.signal_direction > 0 then 1
+            when movements.signal_direction = 0 then 2
+            else 3
+          end,
+          movements.shuffle,
+          movements.ticker
+      ) as direction_rank,
+      count(*) over () as stock_count
+    from market_movements movements
   )
   update public.market_stocks as stock
   set price = case
-        when movements.direction > 0 then least(
-          999999999999.99::numeric,
-          floor(movements.current_price * 1.45 * 100) / 100,
-          greatest(
-            ceil(movements.current_price * 1.10 * 100) / 100,
-            ceil(movements.current_price
-              * (100 + movements.change_percent) / 100.0 * 100) / 100
-          )
+        when movements.direction_rank <= (movements.stock_count + 1) / 2 then least(
+          movements.upper_limit,
+          ceil(movements.current_price
+            * (100 + movements.change_percent) / 100.0 * 100) / 100
         )
         else greatest(
-          0.10::numeric,
-          ceil(movements.current_price * 0.55 * 100) / 100,
-          least(
-            floor(movements.current_price * 0.90 * 100) / 100,
-            floor(movements.current_price
-              * (100 - movements.change_percent) / 100.0 * 100) / 100
-          )
+          movements.lower_limit,
+          floor(movements.current_price
+            * (100 - movements.change_percent) / 100.0 * 100) / 100
         )
       end,
       updated_at = v_now
-  from market_movements movements
+  from balanced_movements movements
   where stock.ticker = movements.ticker;
 
   update public.market_state
