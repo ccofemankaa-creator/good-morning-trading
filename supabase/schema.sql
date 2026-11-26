@@ -8,6 +8,13 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.user_activity (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  last_seen_at timestamptz not null default now(),
+  total_seconds bigint not null default 0 check (total_seconds >= 0),
+  is_active boolean not null default false
+);
+
 alter table public.profiles add column if not exists username text;
 
 with ranked_profiles as (
@@ -284,6 +291,7 @@ create index if not exists positions_user_id_idx on public.positions (user_id);
 
 alter table public.profiles enable row level security;
 alter table public.admin_users enable row level security;
+alter table public.user_activity enable row level security;
 alter table public.wallets enable row level security;
 alter table public.market_stocks enable row level security;
 alter table public.news_templates enable row level security;
@@ -318,6 +326,43 @@ $$;
 
 revoke all on function public.is_admin() from public, anon;
 grant execute on function public.is_admin() to authenticated;
+
+create or replace function public.record_user_activity(p_is_active boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_now timestamptz := clock_timestamp();
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required';
+  end if;
+  if p_is_active is null then
+    raise exception 'Activity state is required';
+  end if;
+
+  insert into public.user_activity as current_activity (
+    user_id, last_seen_at, total_seconds, is_active
+  )
+  values (v_user_id, v_now, 0, p_is_active)
+  on conflict (user_id) do update
+  set total_seconds = current_activity.total_seconds + case
+        when current_activity.is_active
+          and v_now >= current_activity.last_seen_at
+          and v_now - current_activity.last_seen_at <= interval '90 seconds'
+          then floor(extract(epoch from (v_now - current_activity.last_seen_at)))::bigint
+        else 0
+      end,
+      last_seen_at = v_now,
+      is_active = p_is_active;
+end;
+$$;
+
+revoke all on function public.record_user_activity(boolean) from public, anon;
+grant execute on function public.record_user_activity(boolean) to authenticated;
 
 create or replace function public.can_read_chat_message(p_created_at timestamptz)
 returns boolean
@@ -440,6 +485,10 @@ drop policy if exists admin_users_read_self on public.admin_users;
 create policy admin_users_read_self on public.admin_users
 for select to authenticated using (user_id = auth.uid());
 
+drop policy if exists user_activity_read_admin on public.user_activity;
+create policy user_activity_read_admin on public.user_activity
+for select to authenticated using (public.is_admin());
+
 drop policy if exists wallets_read_self_or_admin on public.wallets;
 create policy wallets_read_self_or_admin on public.wallets
 for select to authenticated using (user_id = auth.uid() or public.is_admin());
@@ -511,6 +560,7 @@ grant select, update (shown_at) on public.profile_gifts to authenticated;
 
 grant select on public.profiles, public.wallets, public.market_stocks,
   public.market_news, public.positions, public.chat_messages, public.news_comments to authenticated;
+grant select on public.user_activity to authenticated;
 grant select on public.market_stocks, public.market_news to anon;
 grant select (id, nickname) on public.profiles to anon;
 grant select (id, user_id, body, created_at) on public.chat_messages to anon;

@@ -1072,6 +1072,7 @@
           <button class="chat-submit" type="submit">Отправить</button>
         </form>
       </section>
+      <div id="adminPanel"></div>
     </section>
 
     <nav class="bottom-nav">
@@ -1748,7 +1749,8 @@
     }
     function renderProfile() {
       const panel = document.querySelector("#profilePanel");
-      const adminMarkup = isAdmin
+      const adminPanel = document.querySelector("#adminPanel");
+      adminPanel.innerHTML = isAdmin
         ? '<section class="profile-admin"><strong>Администрирование</strong>' +
             '<small>Текущие пароли не видны. Можно задать новый пароль, просматривать профили и удалять аккаунты.</small>' +
             '<button class="profile-submit" type="button" data-refresh-admin>Обновить список</button>' +
@@ -1797,22 +1799,48 @@
           '<span>Симулятор трейдинга. Пополнение: 200 ₽ — 1000 игровой валюты. Создание и управление собственной акцией: 400 ₽ через администратора.</span></div>' +
         '</div>';
       panel.innerHTML = '<section class="profile-panel">' + accountMarkup +
-        adminMarkup + (authUser ? '' : sharedInfoMarkup) + '</section>';
+        (authUser ? '' : sharedInfoMarkup) + '</section>';
       if (isAdmin) void refreshAdminUsers();
+    }
+    function formatAdminDateTime(timestamp) {
+      if (!timestamp) return "Не зафиксирован";
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.getTime())) return "Не зафиксирован";
+      return date.toLocaleString("ru-RU", {
+        day: "2-digit", month: "2-digit", year: "numeric",
+        hour: "2-digit", minute: "2-digit"
+      });
+    }
+    function formatPlaytime(totalSeconds) {
+      const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const totalMinutes = Math.floor(seconds / 60);
+      const days = Math.floor(totalMinutes / 1440);
+      const hours = Math.floor((totalMinutes % 1440) / 60);
+      const minutes = totalMinutes % 60;
+      if (days) return days + " д " + hours + " ч";
+      if (hours) return hours + " ч " + minutes + " мин";
+      return minutes + " мин";
+    }
+    async function recordUserActivity(isActive) {
+      if (!authUser) return;
+      const { error } = await supabaseClient.rpc("record_user_activity", {
+        p_is_active: isActive
+      });
+      if (error) throw error;
     }
     async function refreshAdminUsers() {
       if (!isAdmin) return;
       const container = document.querySelector("#adminUsers");
       if (!container) return;
-      const [profilesResult, walletsResult, positionsResult, chatResult, commentsResult] = await Promise.all([
+      const [profilesResult, walletsResult, positionsResult, chatResult, activityResult] = await Promise.all([
         supabaseClient.from("profiles").select("id, username, nickname, created_at").order("created_at", { ascending: false }).limit(200),
         supabaseClient.from("wallets").select("user_id, balance"),
         supabaseClient.from("positions").select("user_id, opened_at"),
         supabaseClient.from("chat_messages").select("user_id, created_at").order("created_at", { ascending: false }).limit(1000),
-        supabaseClient.from("news_comments").select("user_id, created_at").order("created_at", { ascending: false }).limit(1000)
+        supabaseClient.from("user_activity").select("user_id, last_seen_at, total_seconds")
       ]);
-      if (profilesResult.error || walletsResult.error || positionsResult.error || chatResult.error || commentsResult.error) {
-        console.error("Could not load admin statistics", profilesResult.error || walletsResult.error || positionsResult.error || chatResult.error || commentsResult.error);
+      if (profilesResult.error || walletsResult.error || positionsResult.error || chatResult.error || activityResult.error) {
+        console.error("Could not load admin statistics", profilesResult.error || walletsResult.error || positionsResult.error || chatResult.error || activityResult.error);
         container.innerHTML = '<div class="empty-news">Не удалось загрузить список пользователей</div>';
         return;
       }
@@ -1830,13 +1858,12 @@
         counts[item.user_id] = (counts[item.user_id] || 0) + 1;
         return counts;
       }, {});
+      const activityByUser = Object.fromEntries((activityResult.data || []).map(item => [item.user_id, item]));
       const now = Date.now();
       const activeSince = now - 24 * 60 * 60 * 1000;
-      const activeUsers = new Set([
-        ...(chatResult.data || []).filter(item => Date.parse(item.created_at) >= activeSince).map(item => item.user_id),
-        ...(commentsResult.data || []).filter(item => Date.parse(item.created_at) >= activeSince).map(item => item.user_id),
-        ...(positionsResult.data || []).filter(item => Date.parse(item.opened_at) >= activeSince).map(item => item.user_id)
-      ]);
+      const activeUsers = new Set((activityResult.data || [])
+        .filter(item => Date.parse(item.last_seen_at) >= activeSince)
+        .map(item => item.user_id));
       const totalBalance = data.reduce((sum, user) => sum + (walletByUser[user.id] || 0), 0);
       const openedPositions = (positionsResult.data || []).length;
       const chatMessages = (chatResult.data || []).length;
@@ -1845,7 +1872,8 @@
         '<div class="admin-stat"><strong>' + activeUsers.size + '</strong><span>Активны за сутки</span></div>' +
         '<div class="admin-stat"><strong>' + money(totalBalance) + '</strong><span>Общий баланс</span></div>' +
         '<div class="admin-stat"><strong>' + openedPositions + '</strong><span>Открытых сделок</span></div>' +
-        '</div><small>Сообщений в чате загружено: ' + chatMessages + '</small>';
+        '</div><small>Сообщений в чате загружено: ' + chatMessages + '</small>' +
+        '<small>Время учитывается, пока игра открыта и вкладка видима. Учёт начинается после обновления.</small>';
       lastAdminReportText =
         "GoodTrader · статистика\\n" +
         "Всего игроков: " + data.length + "\\n" +
@@ -1853,28 +1881,34 @@
         "Общий баланс: " + money(totalBalance) + "\\n" +
         "Открытых сделок: " + openedPositions + "\\n" +
         "Сообщений в чате загружено: " + chatMessages + "\\n\\n" +
-        data.map(user =>
-          escapeHTML(user.nickname) + ": баланс " + money(walletByUser[user.id] || 0) +
-          ", сделок " + (positionCountByUser[user.id] || 0) +
-          ", сообщений " + (chatCountByUser[user.id] || 0)
-        ).join("\\n");
-      container.innerHTML = totalStatsMarkup + data.map(user =>
-        '<div class="admin-user"><span><strong>' + escapeHTML(user.nickname) +
-          '</strong><small>Ник: ' + escapeHTML(user.username) + '</small>' +
-          '<span class="admin-user-meta"><small>Баланс: ' + money(walletByUser[user.id] || 0) +
-            ' · Сделки: ' + (positionCountByUser[user.id] || 0) +
-            ' · Чат: ' + (chatCountByUser[user.id] || 0) + '</small>' +
-            '<small>Регистрация: ' + new Date(user.created_at).toLocaleString("ru-RU", {
-              day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit"
-            }) + '</small></span></span>' +
-          (user.id === authUser.id
-            ? '<small>Это вы</small>'
-            : '<div class="admin-user-actions">' +
-                '<button type="button" data-admin-reset-user="' + escapeHTML(user.id) + '">Сбросить пароль</button>' +
-                '<button type="button" data-admin-delete-user="' + escapeHTML(user.id) + '">Удалить</button>' +
-              '</div>') +
-        '</div>'
-      ).join("");
+        data.map(user => {
+          const activity = activityByUser[user.id];
+          return escapeHTML(user.nickname) + ": баланс " + money(walletByUser[user.id] || 0) +
+            ", сделок " + (positionCountByUser[user.id] || 0) +
+            ", сообщений " + (chatCountByUser[user.id] || 0) +
+            ", последний заход " + formatAdminDateTime(activity && activity.last_seen_at) +
+            ", в игре " + formatPlaytime(activity && activity.total_seconds);
+        }).join("\\n");
+      container.innerHTML = totalStatsMarkup +
+        '<small>Время считается с момента включения учёта; старые сессии задним числом недоступны.</small>' +
+        data.map(user => {
+          const activity = activityByUser[user.id];
+          return '<div class="admin-user"><span><strong>' + escapeHTML(user.nickname) +
+            '</strong><small>Ник: ' + escapeHTML(user.username) + '</small>' +
+            '<span class="admin-user-meta"><small>Баланс: ' + money(walletByUser[user.id] || 0) +
+              ' · Сделки: ' + (positionCountByUser[user.id] || 0) +
+              ' · Чат: ' + (chatCountByUser[user.id] || 0) + '</small>' +
+              '<small>Регистрация: ' + formatAdminDateTime(user.created_at) + '</small>' +
+              '<small>Последний заход: ' + formatAdminDateTime(activity && activity.last_seen_at) + '</small>' +
+              '<small>В игре всего: ' + formatPlaytime(activity && activity.total_seconds) + '</small></span></span>' +
+            (user.id === authUser.id
+              ? '<small>Это вы</small>'
+              : '<div class="admin-user-actions">' +
+                  '<button type="button" data-admin-reset-user="' + escapeHTML(user.id) + '">Сбросить пароль</button>' +
+                  '<button type="button" data-admin-delete-user="' + escapeHTML(user.id) + '">Удалить</button>' +
+                '</div>') +
+          '</div>';
+        }).join("");
     }
     function showCloudError(error) {
       console.error("Supabase request failed", error);
@@ -2204,6 +2238,7 @@
       }
       try {
         await refreshCloudAccount();
+        void recordUserActivity(document.visibilityState === "visible").catch(showCloudError);
         await showProfileGift();
         await showDailyWelcomeBonus();
         await syncCloudMarket();
@@ -2758,6 +2793,7 @@
         return;
       }
       if (event.target.closest("[data-sign-out]")) {
+        await recordUserActivity(false).catch(showCloudError);
         const { error } = await supabaseClient.auth.signOut();
         if (error) toast(error.message || "Не удалось выйти из профиля");
       }
@@ -2923,6 +2959,19 @@
     render();
     document.querySelector("#newsSchedule").textContent = "Общие игровые новости и котировки для всех игроков";
     void startCloud();
+    document.addEventListener("visibilitychange", () => {
+      if (authUser) {
+        void recordUserActivity(document.visibilityState === "visible").catch(showCloudError);
+      }
+    });
+    window.addEventListener("pagehide", () => {
+      if (authUser) void recordUserActivity(false).catch(showCloudError);
+    });
+    setInterval(() => {
+      if (authUser && document.visibilityState === "visible") {
+        void recordUserActivity(true).catch(showCloudError);
+      }
+    }, 60_000);
     setTimeout(() => {
       if (authUser || loadLocalJSON("goodtrader.joinPromptSeen", false)) return;
       document.querySelector("#joinGameModal").hidden = false;
