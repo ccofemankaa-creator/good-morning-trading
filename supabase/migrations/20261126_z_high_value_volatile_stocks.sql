@@ -27,12 +27,13 @@ insert into public.market_stocks (
 values
   ('KRK', 'Krak', 'Krak', 10000000, 10000000, true),
   ('SGM', 'Sigma', 'Сигма', 20000000, 20000000, true),
+  ('GASP', 'Gaspromt', 'Газпромт', 15000000, 15000000, true),
   ('DOLBAEB', 'DOLBAEB', 'Долбаёб', 60000000, 60000000, true)
 on conflict (ticker) do nothing;
 
 update public.market_stocks
 set event_driven = true
-where ticker in ('KRK', 'SGM', 'DOLBAEB');
+where ticker in ('KRK', 'SGM', 'GASP', 'DOLBAEB');
 
 create table if not exists public.daily_market_liquidations (
   market_day date primary key,
