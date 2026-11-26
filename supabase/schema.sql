@@ -991,16 +991,19 @@ begin
       greatest(
         1,
         round(
-          target.start_price
-            + (target.target_price - target.start_price)
-              * least(
-                  1::numeric,
-                  greatest(
-                    0::numeric,
-                    extract(epoch from (v_now - target.created_at))
-                      / target.ramp_seconds
+          case
+            when target.ticker is null then stock.price
+            else target.start_price
+              + (target.target_price - target.start_price)
+                * least(
+                    1::numeric,
+                    greatest(
+                      0::numeric,
+                      extract(epoch from (v_now - target.created_at))
+                        / target.ramp_seconds
+                    )
                   )
-                )
+          end
             + (random()::numeric - 0.5)
               * greatest(0.01, round(stock.price * 0.000005, 2)),
           2
@@ -1008,8 +1011,9 @@ begin
       ) as next_price,
       greatest(0.01, round(stock.price * 0.000005, 2)) as jitter_step
     from public.market_stocks stock
-    join public.daily_market_targets target on target.ticker = stock.ticker
-    where (target.target_date = v_day or target.manual_target)
+    left join public.daily_market_targets target
+      on target.ticker = stock.ticker
+      and (target.target_date = v_day or target.manual_target)
       and target.ramp_seconds > 0
   )
   update public.market_stocks as stock
