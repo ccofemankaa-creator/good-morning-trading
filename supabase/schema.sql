@@ -1001,7 +1001,7 @@ begin
                       / target.ramp_seconds
                   )
                 )
-            + (random() - 0.5)
+            + (random()::numeric - 0.5)
               * greatest(0.01, round(stock.price * 0.000005, 2)),
           2
         )
