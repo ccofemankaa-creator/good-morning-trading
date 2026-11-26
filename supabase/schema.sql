@@ -1018,17 +1018,13 @@ begin
       and target.ramp_seconds > 0
   )
   update public.market_stocks as stock
-  set price = case
-        when movements.next_price = movements.current_price then greatest(
-          1,
-          round(
-            movements.current_price
-              + (case when random() < 0.5 then -1 else 1 end) * movements.jitter_step,
-            2
-          )
+  set price = least(
+        999999999999.99::numeric,
+        greatest(
+          movements.next_price,
+          movements.current_price + movements.jitter_step
         )
-        else movements.next_price
-      end,
+      ),
       updated_at = v_now
   from market_movements movements
   where stock.ticker = movements.ticker;
