@@ -989,28 +989,16 @@ begin
     select
       stock.ticker,
       stock.price as current_price,
-      greatest(
-        1,
-        round(
-          case
-            when target.ticker is null then stock.price
-            else target.start_price
-              + (target.target_price - target.start_price)
-                * least(
-                    1::numeric,
-                    greatest(
-                      0::numeric,
-                      extract(epoch from (v_now - target.created_at))
-                        / target.ramp_seconds
-                    )
-                  )
-          end
-            + (random()::numeric - 0.5)
-              * greatest(0.01, round(stock.price * 0.000005, 2)),
-          2
-        )
-      ) as next_price,
-      greatest(0.01, round(stock.price * 0.000005, 2)) as jitter_step
+      10 + floor(random() * 36)::integer as change_percent,
+      case
+        when stock.price <= 0.10::numeric / 0.90::numeric then 1
+        when stock.price >= 999999999999.99::numeric / 1.10::numeric then -1
+        when stock.price < coalesce(target.target_price, stock.base_price) then
+          case when random() < 0.60 then 1 else -1 end
+        when stock.price > coalesce(target.target_price, stock.base_price) then
+          case when random() < 0.60 then -1 else 1 end
+        else case when random() < 0.5 then -1 else 1 end
+      end as direction
     from public.market_stocks stock
     left join public.daily_market_targets target
       on target.ticker = stock.ticker
@@ -1018,13 +1006,26 @@ begin
       and target.ramp_seconds > 0
   )
   update public.market_stocks as stock
-  set price = least(
-        999999999999.99::numeric,
-        greatest(
-          movements.next_price,
-          movements.current_price + movements.jitter_step
+  set price = case
+        when movements.direction > 0 then least(
+          999999999999.99::numeric,
+          floor(movements.current_price * 1.45 * 100) / 100,
+          greatest(
+            ceil(movements.current_price * 1.10 * 100) / 100,
+            ceil(movements.current_price
+              * (100 + movements.change_percent) / 100.0 * 100) / 100
+          )
         )
-      ),
+        else greatest(
+          0.10::numeric,
+          ceil(movements.current_price * 0.55 * 100) / 100,
+          least(
+            floor(movements.current_price * 0.90 * 100) / 100,
+            floor(movements.current_price
+              * (100 - movements.change_percent) / 100.0 * 100) / 100
+          )
+        )
+      end,
       updated_at = v_now
   from market_movements movements
   where stock.ticker = movements.ticker;
