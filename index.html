@@ -1498,6 +1498,11 @@
     restoreLocalState();
 
     function money(value) {
+      if (Math.abs(value) >= 1_000_000) {
+        return "$" + (value / 1_000_000).toLocaleString("en-US", {
+          maximumFractionDigits: 2
+        }) + "mln";
+      }
       return "$" + value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
     function roundMoney(value) {

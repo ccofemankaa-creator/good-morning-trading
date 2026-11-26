@@ -984,8 +984,11 @@ begin
     where id = true;
   end if;
 
-  update public.market_stocks as stock
-  set price = greatest(
+  with market_movements as materialized (
+    select
+      stock.ticker,
+      stock.price as current_price,
+      greatest(
         1,
         round(
           target.start_price
@@ -997,15 +1000,33 @@ begin
                     extract(epoch from (v_now - target.created_at))
                       / target.ramp_seconds
                   )
-                ),
+                )
+            + (random() - 0.5)
+              * greatest(0.01, round(stock.price * 0.000005, 2)),
           2
         )
-      ),
+      ) as next_price,
+      greatest(0.01, round(stock.price * 0.000005, 2)) as jitter_step
+    from public.market_stocks stock
+    join public.daily_market_targets target on target.ticker = stock.ticker
+    where (target.target_date = v_day or target.manual_target)
+      and target.ramp_seconds > 0
+  )
+  update public.market_stocks as stock
+  set price = case
+        when movements.next_price = movements.current_price then greatest(
+          1,
+          round(
+            movements.current_price
+              + (case when random() < 0.5 then -1 else 1 end) * movements.jitter_step,
+            2
+          )
+        )
+        else movements.next_price
+      end,
       updated_at = v_now
-  from public.daily_market_targets target
-  where target.ticker = stock.ticker
-    and (target.target_date = v_day or target.manual_target)
-    and target.ramp_seconds > 0;
+  from market_movements movements
+  where stock.ticker = movements.ticker;
 
   update public.market_state
   set last_tick_at = v_now
