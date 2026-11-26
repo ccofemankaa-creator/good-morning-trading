@@ -1839,12 +1839,21 @@
         supabaseClient.from("chat_messages").select("user_id, created_at").order("created_at", { ascending: false }).limit(1000),
         supabaseClient.from("user_activity").select("user_id, last_seen_at, total_seconds")
       ]);
-      if (profilesResult.error || walletsResult.error || tradeCountsResult.error || chatResult.error || activityResult.error) {
-        console.error("Could not load admin statistics", profilesResult.error || walletsResult.error || tradeCountsResult.error || chatResult.error || activityResult.error);
+      if (profilesResult.error) {
+        console.error("Could not load admin users", profilesResult.error);
         container.innerHTML = '<div class="empty-news">Не удалось загрузить список пользователей</div>';
         return;
       }
-      const data = profilesResult.data;
+      const missingStats = [
+        { label: "балансы", error: walletsResult.error },
+        { label: "сделки", error: tradeCountsResult.error },
+        { label: "сообщения", error: chatResult.error },
+        { label: "активность", error: activityResult.error }
+      ].filter(item => item.error);
+      if (missingStats.length) {
+        console.error("Could not load some admin statistics", missingStats);
+      }
+      const data = profilesResult.data || [];
       if (!data.length) {
         container.innerHTML = '<div class="empty-news">Пользователей пока нет</div>';
         return;
@@ -1862,52 +1871,58 @@
       const activityByUser = Object.fromEntries((activityResult.data || []).map(item => [item.user_id, item]));
       const now = Date.now();
       const activeSince = now - 24 * 60 * 60 * 1000;
-      const activeUsers = new Set((activityResult.data || [])
+      const activeUsers = activityResult.error ? null : new Set((activityResult.data || [])
         .filter(item => Date.parse(item.last_seen_at) >= activeSince)
         .map(item => item.user_id));
-      const totalBalance = data.reduce((sum, user) => sum + (walletByUser[user.id] || 0), 0);
-      const openedPositions = (tradeCountsResult.data || []).reduce(
+      const totalBalance = walletsResult.error ? null : data.reduce((sum, user) => sum + (walletByUser[user.id] || 0), 0);
+      const openedPositions = tradeCountsResult.error ? null : (tradeCountsResult.data || []).reduce(
         (sum, item) => sum + Number(item.open_positions || 0),
         0
       );
-      const chatMessages = (chatResult.data || []).length;
+      const chatMessages = chatResult.error ? null : (chatResult.data || []).length;
+      const warningMarkup = missingStats.length
+        ? '<div class="empty-news">Не удалось загрузить: ' +
+          escapeHTML(missingStats.map(item => item.label).join(", ")) +
+          '. Список пользователей показан; попробуйте обновить позже.</div>'
+        : "";
       const totalStatsMarkup = '<div class="admin-stats">' +
         '<div class="admin-stat"><strong>' + data.length + '</strong><span>Всего игроков</span></div>' +
-        '<div class="admin-stat"><strong>' + activeUsers.size + '</strong><span>Активны за сутки</span></div>' +
-        '<div class="admin-stat"><strong>' + money(totalBalance) + '</strong><span>Общий баланс</span></div>' +
-        '<div class="admin-stat"><strong>' + openedPositions + '</strong><span>Открытых позиций</span></div>' +
-        '</div><small>Сообщений в чате загружено: ' + chatMessages + '</small>' +
+        '<div class="admin-stat"><strong>' + (activeUsers ? activeUsers.size : "—") + '</strong><span>Активны за сутки</span></div>' +
+        '<div class="admin-stat"><strong>' + (totalBalance === null ? "—" : money(totalBalance)) + '</strong><span>Общий баланс</span></div>' +
+        '<div class="admin-stat"><strong>' + (openedPositions === null ? "—" : openedPositions) + '</strong><span>Открытых позиций</span></div>' +
+        '</div><small>Сообщений в чате загружено: ' + (chatMessages === null ? "—" : chatMessages) + '</small>' +
         '<small>Время учитывается, пока игра открыта и вкладка видима. Учёт начинается после обновления.</small>';
       lastAdminReportText =
         "GoodTrader · статистика\\n" +
         "Всего игроков: " + data.length + "\\n" +
-        "Активны за сутки: " + activeUsers.size + "\\n" +
-        "Общий баланс: " + money(totalBalance) + "\\n" +
-        "Открытых позиций: " + openedPositions + "\\n" +
-        "Сообщений в чате загружено: " + chatMessages + "\\n\\n" +
+        "Активны за сутки: " + (activeUsers ? activeUsers.size : "не загружено") + "\\n" +
+        "Общий баланс: " + (totalBalance === null ? "не загружено" : money(totalBalance)) + "\\n" +
+        "Открытых позиций: " + (openedPositions === null ? "не загружено" : openedPositions) + "\\n" +
+        "Сообщений в чате загружено: " + (chatMessages === null ? "не загружено" : chatMessages) + "\\n\\n" +
         data.map(user => {
           const activity = activityByUser[user.id];
-          const trades = tradeCountsByUser[user.id] || { total: 0, closed: 0, open: 0 };
-          return escapeHTML(user.nickname) + ": баланс " + money(walletByUser[user.id] || 0) +
-            ", сделок всего " + trades.total + " (закрыто " + trades.closed + ", открыто " + trades.open + ")" +
-            ", сообщений " + (chatCountByUser[user.id] || 0) +
-            ", последний заход " + formatAdminDateTime(activity && activity.last_seen_at) +
-            ", в игре " + formatPlaytime(activity && activity.total_seconds);
+          const trades = tradeCountsResult.error ? null : (tradeCountsByUser[user.id] || { total: 0, closed: 0, open: 0 });
+          return escapeHTML(user.nickname) + ": баланс " +
+            (walletsResult.error ? "не загружен" : money(walletByUser[user.id] || 0)) +
+            ", сделок всего " + (trades ? trades.total + " (закрыто " + trades.closed + ", открыто " + trades.open + ")" : "не загружено") +
+            ", сообщений " + (chatResult.error ? "не загружено" : (chatCountByUser[user.id] || 0)) +
+            ", последний заход " + (activityResult.error ? "не загружен" : formatAdminDateTime(activity && activity.last_seen_at)) +
+            ", в игре " + (activityResult.error ? "не загружено" : formatPlaytime(activity && activity.total_seconds));
         }).join("\\n");
-      container.innerHTML = totalStatsMarkup +
+      container.innerHTML = warningMarkup + totalStatsMarkup +
         '<small>Время считается с момента включения учёта; старые сессии задним числом недоступны.</small>' +
         data.map(user => {
           const activity = activityByUser[user.id];
-          const trades = tradeCountsByUser[user.id] || { total: 0, closed: 0, open: 0 };
+          const trades = tradeCountsResult.error ? null : (tradeCountsByUser[user.id] || { total: 0, closed: 0, open: 0 });
           return '<div class="admin-user"><span><strong>' + escapeHTML(user.nickname) +
             '</strong><small>Ник: ' + escapeHTML(user.username) + '</small>' +
-            '<span class="admin-user-meta"><small>Баланс: ' + money(walletByUser[user.id] || 0) +
-              ' · Чат: ' + (chatCountByUser[user.id] || 0) + '</small>' +
-              '<small>Сделок всего: ' + trades.total +
-                ' · Закрытых: ' + trades.closed + ' · Открытых: ' + trades.open + '</small>' +
+            '<span class="admin-user-meta"><small>Баланс: ' + (walletsResult.error ? "не загружен" : money(walletByUser[user.id] || 0)) +
+              ' · Чат: ' + (chatResult.error ? "не загружено" : (chatCountByUser[user.id] || 0)) + '</small>' +
+              '<small>Сделок всего: ' + (trades ? trades.total +
+                ' · Закрытых: ' + trades.closed + ' · Открытых: ' + trades.open : "не загружено") + '</small>' +
               '<small>Регистрация: ' + formatAdminDateTime(user.created_at) + '</small>' +
-              '<small>Последний заход: ' + formatAdminDateTime(activity && activity.last_seen_at) + '</small>' +
-              '<small>В игре всего: ' + formatPlaytime(activity && activity.total_seconds) + '</small></span></span>' +
+              '<small>Последний заход: ' + (activityResult.error ? "не загружен" : formatAdminDateTime(activity && activity.last_seen_at)) + '</small>' +
+              '<small>В игре всего: ' + (activityResult.error ? "не загружено" : formatPlaytime(activity && activity.total_seconds)) + '</small></span></span>' +
             (user.id === authUser.id
               ? '<small>Это вы</small>'
               : '<div class="admin-user-actions">' +
